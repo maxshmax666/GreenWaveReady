@@ -6,7 +6,10 @@ Premium navigation monorepo foundation: **MapLibre = geospatial source of truth*
 
 - Node.js **20.11.1+**
 - npm **10.8.2+**
-- Expo Go SDK 53 / iOS 16+ / Android 10+
+- Expo SDK **53** (project dependency: `expo ~53.0.9`)
+- iOS **16+** / Android **10+**
+- **Expo Go = limited mode only** (works when using a fallback map adapter without native MapLibre bindings).
+- **Custom Dev Client = required for full map functionality** (`@maplibre/maplibre-react-native` native module).
 
 ## Monorepo layout
 
@@ -44,22 +47,39 @@ npm run lint
 npm run dev -w @greenwave/api
 ```
 
-### Mobile: Expo Go
+### Mobile runtime matrix
+
+| Runtime | Start command | What works | What does not work |
+| --- | --- | --- | --- |
+| **Expo Go** | `npm run dev -w @greenwave/mobile` | App shell, navigation state/debug UI, any screen that uses `MockMapView` fallback | Native MapLibre view (`MapLibreMapView`) and full in-map rendering pipeline |
+| **Dev Client (custom build)** | `npm run dev:client -w @greenwave/mobile` (after `npm run android` / `npm run ios`) | **Full functionality**: MapLibre map, camera, route layers, overlays, vehicle rendering | None of the MapLibre-related features are missing |
+
+### Mobile: Expo Go (fallback mode)
 
 ```bash
 npm run dev -w @greenwave/mobile
 ```
 
-Open the project in the Expo Go app (QR code / project list).
+Open the project in Expo Go (QR code / project list).
 
-### Mobile: Dev Client (MapLibre native)
+Fallback map component exists at `apps/mobile/src/features/map/mock-map-view.tsx`.
+
+To enable it for Expo Go in the current codebase (manual switch):
+
+1. Open `apps/mobile/src/features/navigation/navigation-screen.tsx`.
+2. Replace `MapLibreMapView` import with `MockMapView`.
+3. Replace `<MapLibreMapView ... />` render with `<MockMapView ... />` using the same props.
+
+This fallback keeps the feature flow testable in Expo Go without native MapLibre bindings.
+
+### Mobile: Dev Client (MapLibre native, full mode)
 
 ```bash
 npm run android -w @greenwave/mobile
 npm run dev:client -w @greenwave/mobile
 ```
 
-For iOS dev build, use `npm run ios -w @greenwave/mobile` before `npm run dev:client -w @greenwave/mobile`.
+For iOS dev build, run `npm run ios -w @greenwave/mobile` before `npm run dev:client -w @greenwave/mobile`.
 
 ### Troubleshooting
 
