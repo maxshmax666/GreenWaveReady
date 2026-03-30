@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { deriveCameraModel, projectProgress } from '@greenwave/navigation-core';
@@ -6,7 +6,7 @@ import { GlassPanel, MetricText } from '@greenwave/ui';
 import { MapLibreMapView } from '../map/maplibre-map-view';
 import { useNavigationStore } from '../../state/navigation-store';
 import { fetchRoutes } from '../../services/routing-client';
-import { makeVehicleState } from '../../simulation/simulator';
+import { nextVehicleState } from '../../simulation/simulator';
 import { DebugHud } from '../debug/debug-hud';
 
 export const NavigationScreen = (): React.JSX.Element => {
@@ -17,8 +17,13 @@ export const NavigationScreen = (): React.JSX.Element => {
   const cameraMode = useNavigationStore((s) => s.cameraMode);
   const setCameraMode = useNavigationStore((s) => s.setCameraMode);
   const toggleSimulation = useNavigationStore((s) => s.toggleSimulation);
+  const simulationEnabled = useNavigationStore((s) => s.simulationEnabled);
+  const tickRef = useRef<number>(0);
+  const vehicleStateRef = useRef(vehicleState);
 
-  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    vehicleStateRef.current = vehicleState;
+  }, [vehicleState]);
 
   const { data } = useQuery({
     queryKey: ['route', 'default'],
@@ -37,16 +42,22 @@ export const NavigationScreen = (): React.JSX.Element => {
   }, [activeRoute, data, setRoute]);
 
   useEffect(() => {
-    if (!activeRoute) {
+    if (!simulationEnabled || !activeRoute) {
       return;
     }
+    const intervalMs = 1100;
     const id = setInterval(() => {
-      setTick((t) => t + 1);
-      setVehicleState(makeVehicleState(activeRoute, tick + 1));
-    }, 1100);
+      if (!activeRoute) {
+        return;
+      }
+      tickRef.current += 1;
+      const nextState = nextVehicleState(activeRoute, vehicleStateRef.current, intervalMs);
+      vehicleStateRef.current = nextState;
+      setVehicleState(nextState);
+    }, intervalMs);
 
     return () => clearInterval(id);
-  }, [activeRoute, setVehicleState, tick]);
+  }, [activeRoute, setVehicleState, simulationEnabled]);
 
   const progress = useMemo(() => {
     if (!activeRoute || !vehicleState) {
