@@ -10,7 +10,6 @@ import type { MapAdapterProps } from './map-adapter';
 import { useCameraController } from '../navigation/use-camera-controller';
 import {
   DrivingCameraController,
-  type CameraMode,
   toLngLat,
 } from '@greenwave/map-core';
 import { ThreeWorldManager } from '@greenwave/three-world';
@@ -76,7 +75,7 @@ export const MapLibreMapView = ({
 
     return cameraController.nextFrame({
       vehicle: resolvedVehicle,
-      mode: cameraMode as CameraMode,
+      mode: cameraMode,
       routeProgress,
     });
   }, [cameraMode, resolvedVehicle, routeProgress]);
@@ -217,11 +216,8 @@ export const MapLibreMapView = ({
       setMapError('Failed to load map style or tiles.');
     };
 
-  const centerCoordinate = resolvedVehicle
-    ? ([resolvedVehicle.coordinate.lng, resolvedVehicle.coordinate.lat] as [
-        number,
-        number,
-      ])
+  const centerCoordinate: [number, number] = resolvedVehicle
+    ? [resolvedVehicle.coordinate.lng, resolvedVehicle.coordinate.lat]
     : (routeCoordinates[0] ?? [37.617, 55.751]);
 
   return (
