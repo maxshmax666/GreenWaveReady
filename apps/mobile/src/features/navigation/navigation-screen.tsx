@@ -140,6 +140,7 @@ export const NavigationScreen = (): React.JSX.Element => {
 
   const errorDetails =
     isError && error instanceof Error ? error.message : 'Unknown routing error';
+  const pipeline = pipelineRef.current;
 
   return (
     <SafeAreaView
@@ -168,18 +169,22 @@ export const NavigationScreen = (): React.JSX.Element => {
       </GlassPanel>
 
       <View style={{ flex: 1 }}>
-        <MapLibreMapView
-          route={mapRoute}
-          vehicle={mapVehicle}
-          pipeline={pipelineRef.current}
-          cameraMode={mapCameraMode}
-          showGreenWaveOverlay
-          routeProgress={progress}
-          showRouteLine={showRouteLine}
-          showPassedRoute={showPassedRoute}
-          showThreeWorld={showThreeWorld}
-          qualityMode={objectDensity}
-        />
+        {pipeline ? (
+          <MapLibreMapView
+            route={mapRoute}
+            vehicle={mapVehicle}
+            pipeline={pipeline}
+            cameraMode={mapCameraMode}
+            showGreenWaveOverlay
+            routeProgress={progress}
+            showRouteLine={showRouteLine}
+            showPassedRoute={showPassedRoute}
+            showThreeWorld={showThreeWorld}
+            qualityMode={objectDensity}
+          />
+        ) : (
+          <LoadingState />
+        )}
         <DebugHud />
       </View>
 
@@ -229,4 +234,10 @@ const ActionButton = ({
       {title}
     </Text>
   </TouchableOpacity>
+);
+
+const LoadingState = (): React.JSX.Element => (
+  <GlassPanel style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+    <Text style={{ color: '#8D95A8' }}>Подготавливаем позиционирование…</Text>
+  </GlassPanel>
 );
