@@ -5,9 +5,15 @@ import { deriveCameraModel, projectProgress } from '@greenwave/navigation-core';
 import { GlassPanel, MetricText } from '@greenwave/ui';
 import { MapLibreMapView } from '../map/maplibre-map-view';
 import { useNavigationStore } from '../../state/navigation-store';
-import { fetchRoutes } from '../../services/routing-client';
+import {
+  fetchRoutes,
+  RoutingHttpError,
+  RoutingTimeoutError,
+} from '../../services/routing-client';
 import { nextVehicleState } from '../../simulation/simulator';
 import { DebugHud } from '../debug/debug-hud';
+
+const RETRYABLE_HTTP_STATUS = new Set([429, 500, 502, 503, 504]);
 
 export const NavigationScreen = (): React.JSX.Element => {
   const activeRoute = useNavigationStore((s) => s.activeRoute);
@@ -25,7 +31,14 @@ export const NavigationScreen = (): React.JSX.Element => {
     vehicleStateRef.current = vehicleState;
   }, [vehicleState]);
 
-  const { data } = useQuery({
+  const {
+    data,
+    isPending,
+    isFetching,
+    isError,
+    error,
+    refetch: retryRouteFetch,
+  } = useQuery({
     queryKey: ['route', 'default'],
     queryFn: () =>
       fetchRoutes({
@@ -33,6 +46,24 @@ export const NavigationScreen = (): React.JSX.Element => {
         destination: { lat: 55.764, lng: 37.64 },
         profile: 'car',
       }),
+    retry: (failureCount, retryError) => {
+      if (failureCount >= 2) {
+        return false;
+      }
+
+      if (retryError instanceof RoutingTimeoutError) {
+        return true;
+      }
+
+      if (retryError instanceof RoutingHttpError) {
+        return RETRYABLE_HTTP_STATUS.has(retryError.status);
+      }
+
+      return retryError instanceof TypeError;
+    },
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    networkMode: 'online',
   });
 
   useEffect(() => {
@@ -72,15 +103,46 @@ export const NavigationScreen = (): React.JSX.Element => {
 
   const camera = deriveCameraModel(vehicleState?.speedKph ?? 0);
 
+  const routeUiState: 'loading' | 'degraded' | 'failed' | 'ready' =
+    (isPending || isFetching) && !activeRoute
+      ? 'loading'
+      : isError && activeRoute
+        ? 'degraded'
+        : isError
+          ? 'failed'
+          : 'ready';
+
+  const statusText =
+    routeUiState === 'loading'
+      ? 'Ищем оптимальный маршрут…'
+      : routeUiState === 'degraded'
+        ? 'Маршрут обновить не удалось, используется кэш'
+        : routeUiState === 'failed'
+          ? 'Маршрут недоступен'
+          : 'in 1.2 km • ETA 14 min';
+
+  const errorDetails =
+    isError && error instanceof Error ? error.message : 'Unknown routing error';
+
   return (
     <SafeAreaView
       style={{ flex: 1, backgroundColor: '#05070C', padding: 14, gap: 12 }}
     >
       <GlassPanel>
         <Text style={{ color: '#F4F7FF', fontSize: 18, fontWeight: '700' }}>
-          Next: Continue straight
+          {routeUiState === 'failed'
+            ? 'Не удалось построить маршрут'
+            : 'Next: Continue straight'}
         </Text>
-        <Text style={{ color: '#8D95A8' }}>in 1.2 km • ETA 14 min</Text>
+        <Text style={{ color: '#8D95A8' }}>{statusText}</Text>
+        {(routeUiState === 'degraded' || routeUiState === 'failed') && (
+          <>
+            <Text style={{ color: '#8D95A8', marginTop: 6 }}>{errorDetails}</Text>
+            <View style={{ marginTop: 8 }}>
+              <ActionButton title="Retry" onPress={() => void retryRouteFetch()} />
+            </View>
+          </>
+        )}
       </GlassPanel>
 
       <View style={{ flex: 1 }}>
