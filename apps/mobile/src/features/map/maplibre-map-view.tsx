@@ -38,6 +38,7 @@ const cameraController = new DrivingCameraController();
 export const MapLibreMapView = ({
   route,
   vehicle,
+  pipeline,
   cameraMode,
   showGreenWaveOverlay,
   routeProgress,
@@ -63,22 +64,24 @@ export const MapLibreMapView = ({
     return routeCoordinates.slice(0, cutoffIndex);
   }, [routeCoordinates, routeProgress]);
 
+  const resolvedVehicle = vehicle ?? pipeline.renderedPosition;
+
   const cameraModel = useMemo(() => {
-    if (!vehicle) {
+    if (!resolvedVehicle) {
       return null;
     }
 
     return cameraController.nextFrame({
-      vehicle,
+      vehicle: resolvedVehicle,
       mode: cameraMode as CameraMode,
       routeProgress,
     });
-  }, [cameraMode, routeProgress, vehicle]);
+  }, [cameraMode, resolvedVehicle, routeProgress]);
 
   const cameraRef = useRef<CameraRef | null>(null);
 
   useCameraController({
-    vehicleState: vehicle,
+    vehicleState: resolvedVehicle,
     cameraMode,
     routeProgress,
     routePolyline: route?.geometry ?? [],
@@ -93,11 +96,14 @@ export const MapLibreMapView = ({
   const worldRef = useRef(new ThreeWorldManager());
   worldRef.current.setQuality(qualityMode);
   worldRef.current.sync({
-    cameraBearing: cameraModel?.heading ?? vehicle?.headingDeg ?? 0,
+    cameraBearing: cameraModel?.heading ?? resolvedVehicle?.headingDeg ?? 0,
     cameraPitch: cameraModel?.pitch ?? 30,
-    center: vehicle?.coordinate ?? route?.geometry[0] ?? { lat: 55.751, lng: 37.617 },
+    center:
+      resolvedVehicle?.coordinate ??
+      route?.geometry[0] ??
+      { lat: 55.751, lng: 37.617 },
     routeCorridor: route?.geometry ?? [],
-    ...(vehicle ? { vehicle } : {}),
+    ...(resolvedVehicle ? { vehicle: resolvedVehicle } : {}),
   });
 
   const routeGeoJson = useMemo<GeoFeatureCollection<GeoLineString>>(() => {
@@ -179,7 +185,7 @@ export const MapLibreMapView = ({
   }, [routeCoordinates, showGreenWaveOverlay]);
 
   const vehicleGeoJson = useMemo<GeoFeatureCollection<GeoPoint>>(() => {
-    if (!vehicle) {
+    if (!resolvedVehicle) {
       return emptyFeatureCollection<GeoPoint>();
     }
 
@@ -190,18 +196,24 @@ export const MapLibreMapView = ({
           type: 'Feature',
           geometry: {
             type: 'Point',
-            coordinates: [vehicle.coordinate.lng, vehicle.coordinate.lat],
+            coordinates: [
+              resolvedVehicle.coordinate.lng,
+              resolvedVehicle.coordinate.lat,
+            ],
           },
           properties: {
-            headingDeg: vehicle.headingDeg,
+            headingDeg: resolvedVehicle.headingDeg,
           },
         },
       ],
     };
-  }, [vehicle]);
+  }, [resolvedVehicle]);
 
-  const centerCoordinate = vehicle
-    ? ([vehicle.coordinate.lng, vehicle.coordinate.lat] as [number, number])
+  const centerCoordinate = resolvedVehicle
+    ? ([resolvedVehicle.coordinate.lng, resolvedVehicle.coordinate.lat] as [
+        number,
+        number,
+      ])
     : (routeCoordinates[0] ?? [37.617, 55.751]);
 
   return (
