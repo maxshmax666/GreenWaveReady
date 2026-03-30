@@ -3,7 +3,13 @@ import { Text, View } from 'react-native';
 import type { MapAdapterProps } from './map-adapter';
 import { VehicleMarker } from '../../components/vehicle-marker';
 
-export const MockMapView = ({ route, vehicle, cameraMode, showGreenWaveOverlay }: MapAdapterProps): React.JSX.Element => (
+export const MockMapView = ({
+  route,
+  vehicle,
+  cameraMode,
+  showGreenWaveOverlay,
+  routeProgress,
+}: MapAdapterProps): React.JSX.Element => (
   <View
     style={{
       backgroundColor: '#0B101D',
@@ -15,10 +21,19 @@ export const MockMapView = ({ route, vehicle, cameraMode, showGreenWaveOverlay }
       justifyContent: 'space-between',
     }}
   >
-    <Text style={{ color: '#9FA9BE' }}>Map adapter placeholder (replace with MapLibre)</Text>
+    <Text style={{ color: '#9FA9BE' }}>
+      Map adapter placeholder (replace with MapLibre)
+    </Text>
     <Text style={{ color: '#D5DEEF' }}>Camera: {cameraMode}</Text>
-    <Text style={{ color: '#D5DEEF' }}>Route points: {route?.geometry.length ?? 0}</Text>
-    <Text style={{ color: '#D5DEEF' }}>Green Wave overlay: {showGreenWaveOverlay ? 'on' : 'off'}</Text>
+    <Text style={{ color: '#D5DEEF' }}>
+      Route points: {route?.geometry.length ?? 0}
+    </Text>
+    <Text style={{ color: '#D5DEEF' }}>
+      Green Wave overlay: {showGreenWaveOverlay ? 'on' : 'off'}
+    </Text>
+    <Text style={{ color: '#D5DEEF' }}>
+      Progress: {Math.round(routeProgress * 100)}%
+    </Text>
     <VehicleMarker headingDeg={vehicle?.headingDeg ?? 0} />
   </View>
 );

@@ -51,7 +51,11 @@ export const NavigationScreen = (): React.JSX.Element => {
         return;
       }
       tickRef.current += 1;
-      const nextState = nextVehicleState(activeRoute, vehicleStateRef.current, intervalMs);
+      const nextState = nextVehicleState(
+        activeRoute,
+        vehicleStateRef.current,
+        intervalMs,
+      );
       vehicleStateRef.current = nextState;
       setVehicleState(nextState);
     }, intervalMs);
@@ -69,19 +73,34 @@ export const NavigationScreen = (): React.JSX.Element => {
   const camera = deriveCameraModel(vehicleState?.speedKph ?? 0);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#05070C', padding: 14, gap: 12 }}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: '#05070C', padding: 14, gap: 12 }}
+    >
       <GlassPanel>
-        <Text style={{ color: '#F4F7FF', fontSize: 18, fontWeight: '700' }}>Next: Continue straight</Text>
+        <Text style={{ color: '#F4F7FF', fontSize: 18, fontWeight: '700' }}>
+          Next: Continue straight
+        </Text>
         <Text style={{ color: '#8D95A8' }}>in 1.2 km • ETA 14 min</Text>
       </GlassPanel>
 
       <View style={{ flex: 1 }}>
-        <MapLibreMapView route={activeRoute} vehicle={vehicleState} cameraMode={cameraMode} showGreenWaveOverlay />
+        <MapLibreMapView
+          route={activeRoute}
+          vehicle={vehicleState}
+          cameraMode={cameraMode}
+          showGreenWaveOverlay
+          routeProgress={progress}
+        />
         <DebugHud />
       </View>
 
-      <GlassPanel style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <MetricText value={`${Math.round((vehicleState?.speedKph ?? 0) * 10) / 10}`} label="Speed" />
+      <GlassPanel
+        style={{ flexDirection: 'row', justifyContent: 'space-between' }}
+      >
+        <MetricText
+          value={`${Math.round((vehicleState?.speedKph ?? 0) * 10) / 10}`}
+          label="Speed"
+        />
         <MetricText value={`${Math.round(progress * 100)}%`} label="Progress" />
         <MetricText value={`${camera.pitch.toFixed(0)}°`} label="Pitch" />
       </GlassPanel>
@@ -89,7 +108,9 @@ export const NavigationScreen = (): React.JSX.Element => {
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <ActionButton
           title={cameraMode === 'follow' ? 'Overview' : 'Follow'}
-          onPress={() => setCameraMode(cameraMode === 'follow' ? 'overview' : 'follow')}
+          onPress={() =>
+            setCameraMode(cameraMode === 'follow' ? 'overview' : 'follow')
+          }
         />
         <ActionButton title="Simulation" onPress={toggleSimulation} />
       </View>
@@ -97,7 +118,13 @@ export const NavigationScreen = (): React.JSX.Element => {
   );
 };
 
-const ActionButton = ({ title, onPress }: { title: string; onPress: () => void }): React.JSX.Element => (
+const ActionButton = ({
+  title,
+  onPress,
+}: {
+  title: string;
+  onPress: () => void;
+}): React.JSX.Element => (
   <TouchableOpacity
     onPress={onPress}
     style={{
@@ -109,6 +136,8 @@ const ActionButton = ({ title, onPress }: { title: string; onPress: () => void }
       borderWidth: 1,
     }}
   >
-    <Text style={{ color: '#F2F5FF', textAlign: 'center', fontWeight: '600' }}>{title}</Text>
+    <Text style={{ color: '#F2F5FF', textAlign: 'center', fontWeight: '600' }}>
+      {title}
+    </Text>
   </TouchableOpacity>
 );
