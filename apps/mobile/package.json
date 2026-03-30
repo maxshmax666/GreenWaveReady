@@ -20,7 +20,7 @@
     "react": "19.0.0",
     "react-native": "0.79.2",
     "zustand": "^5.0.3",
-    "@maplibre/maplibre-react-native": "10.1.36",
+    "@maplibre/maplibre-react-native": "10.4.2",
     "@greenwave/map-core": "0.1.0",
     "@greenwave/three-world": "0.1.0",
     "@react-navigation/native": "^7.1.10",
