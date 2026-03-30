@@ -14,9 +14,11 @@ type CameraConfig = {
   animationDuration?: number;
 };
 
+type CameraAnimationMode = 'flyTo' | 'easeTo' | 'linearTo' | 'moveTo';
+
 export type MapCameraController = {
-  setCamera: (config: CameraConfig) => void;
-  easeTo: (config: CameraConfig) => void;
+  setCamera: (config: CameraConfig & { animationMode?: CameraAnimationMode }) => void;
+  easeTo?: (config: CameraConfig) => void;
   flyTo: (coordinates: [number, number], durationMs?: number) => void;
   fitBounds: (
     northEast: [number, number],
@@ -266,12 +268,22 @@ export const useCameraController = ({
     pendingCommandRef.current = () => {
       if (movedMeters > 260) {
         camera.flyTo(nextCenter, 550);
-        camera.easeTo({
-          heading,
-          pitch: cameraModel.pitch,
-          zoomLevel: cameraModel.zoom,
-          animationDuration: 350,
-        });
+        if (camera.easeTo) {
+          camera.easeTo({
+            heading,
+            pitch: cameraModel.pitch,
+            zoomLevel: cameraModel.zoom,
+            animationDuration: 350,
+          });
+        } else {
+          camera.setCamera({
+            heading,
+            pitch: cameraModel.pitch,
+            zoomLevel: cameraModel.zoom,
+            animationDuration: 350,
+            animationMode: 'easeTo',
+          });
+        }
       } else {
         camera.setCamera({
           centerCoordinate: nextCenter,
