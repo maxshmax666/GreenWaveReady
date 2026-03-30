@@ -1,9 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import { runtimeConfig } from '@greenwave/config';
 import { GlassPanel } from '@greenwave/ui';
 import type { MapAdapterProps } from './map-adapter';
+import {
+  useCameraController,
+  type MapCameraController,
+} from '../navigation/use-camera-controller';
+import { deriveCameraModel } from '@greenwave/navigation-core';
 
 const GREEN_WAVE_POINT_INTERVAL = 6;
 
@@ -19,16 +24,41 @@ type GeoFeatureCollection<T extends GeoPoint | GeoLineString> = {
   features: Array<GeoFeature<T>>;
 };
 
-const emptyFeatureCollection = <T extends GeoPoint | GeoLineString>(): GeoFeatureCollection<T> => ({
+const emptyFeatureCollection = <
+  T extends GeoPoint | GeoLineString,
+>(): GeoFeatureCollection<T> => ({
   type: 'FeatureCollection',
   features: [],
 });
 
-export const MapLibreMapView = ({ route, vehicle, cameraMode, showGreenWaveOverlay }: MapAdapterProps): React.JSX.Element => {
+export const MapLibreMapView = ({
+  route,
+  vehicle,
+  cameraMode,
+  showGreenWaveOverlay,
+  routeProgress,
+}: MapAdapterProps): React.JSX.Element => {
   const [mapRenderEpoch, setMapRenderEpoch] = useState(0);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  const routeCoordinates = useMemo(() => route?.geometry.map((point) => [point.lng, point.lat] as [number, number]) ?? [], [route]);
+  const routeCoordinates = useMemo(
+    () =>
+      route?.geometry.map(
+        (point) => [point.lng, point.lat] as [number, number],
+      ) ?? [],
+    [route],
+  );
+
+  const cameraRef = useRef<MapCameraController | null>(null);
+
+  useCameraController({
+    vehicleState: vehicle,
+    cameraMode,
+    routeProgress,
+    routePolyline: route?.geometry ?? [],
+    deriveCameraModel,
+    cameraRef,
+  });
 
   const routeGeoJson = useMemo<GeoFeatureCollection<GeoLineString>>(() => {
     if (routeCoordinates.length < 2) {
@@ -37,7 +67,13 @@ export const MapLibreMapView = ({ route, vehicle, cameraMode, showGreenWaveOverl
 
     return {
       type: 'FeatureCollection',
-      features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: routeCoordinates }, properties: {} }],
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: routeCoordinates },
+          properties: {},
+        },
+      ],
     };
   }, [routeCoordinates]);
 
@@ -95,7 +131,10 @@ export const MapLibreMapView = ({ route, vehicle, cameraMode, showGreenWaveOverl
       features: [
         {
           type: 'Feature',
-          geometry: { type: 'Point', coordinates: [vehicle.coordinate.lng, vehicle.coordinate.lat] },
+          geometry: {
+            type: 'Point',
+            coordinates: [vehicle.coordinate.lng, vehicle.coordinate.lat],
+          },
           properties: {
             headingDeg: vehicle.headingDeg,
           },
@@ -108,17 +147,33 @@ export const MapLibreMapView = ({ route, vehicle, cameraMode, showGreenWaveOverl
     ? ([vehicle.coordinate.lng, vehicle.coordinate.lat] as [number, number])
     : (routeCoordinates[0] ?? [37.617, 55.751]);
 
-  const terrainEnabled = Boolean((MapLibreGL as unknown as { Terrain?: unknown }).Terrain);
-  const skyEnabled = Boolean((MapLibreGL as unknown as { SkyLayer?: unknown }).SkyLayer);
+  const terrainEnabled = Boolean(
+    (MapLibreGL as unknown as { Terrain?: unknown }).Terrain,
+  );
+  const skyEnabled = Boolean(
+    (MapLibreGL as unknown as { SkyLayer?: unknown }).SkyLayer,
+  );
 
   return (
-    <View style={{ flex: 1, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#1D2A46' }}>
+    <View
+      style={{
+        flex: 1,
+        borderRadius: 16,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#1D2A46',
+      }}
+    >
       <MapLibreGL.MapView
         key={mapRenderEpoch}
         style={{ flex: 1 }}
         styleURL={runtimeConfig.mapStyleUrl}
-        onDidFailLoadingMap={(event) => {
-          setMapError(event.nativeEvent?.message ?? 'Failed to load map style or tiles.');
+        onDidFailLoadingMap={(event: {
+          nativeEvent?: { message?: string };
+        }) => {
+          setMapError(
+            event.nativeEvent?.message ?? 'Failed to load map style or tiles.',
+          );
         }}
         onDidFinishLoadingStyle={() => {
           if (mapError) {
@@ -127,15 +182,16 @@ export const MapLibreMapView = ({ route, vehicle, cameraMode, showGreenWaveOverl
         }}
       >
         <MapLibreGL.Camera
+          ref={cameraRef as React.RefObject<unknown>}
           centerCoordinate={centerCoordinate}
-          zoomLevel={cameraMode === 'follow' ? 16 : 13.6}
-          pitch={cameraMode === 'follow' ? 52 : 35}
-          heading={vehicle?.headingDeg ?? 0}
-          animationMode="easeTo"
-          animationDuration={500}
+          zoomLevel={13.6}
+          pitch={35}
         />
 
-        <MapLibreGL.VectorSource id="greenwave-base" tileUrlTemplates={[runtimeConfig.mapTileEndpoint]}>
+        <MapLibreGL.VectorSource
+          id="greenwave-base"
+          tileUrlTemplates={[runtimeConfig.mapTileEndpoint]}
+        >
           <MapLibreGL.FillExtrusionLayer
             id="buildings-3d"
             sourceLayerID="building"
@@ -151,7 +207,11 @@ export const MapLibreMapView = ({ route, vehicle, cameraMode, showGreenWaveOverl
 
         {terrainEnabled ? (
           <>
-            <MapLibreGL.RasterDemSource id="terrain-dem" tileUrlTemplates={[runtimeConfig.mapTileEndpoint]} tileSize={256}>
+            <MapLibreGL.RasterDemSource
+              id="terrain-dem"
+              tileUrlTemplates={[runtimeConfig.mapTileEndpoint]}
+              tileSize={256}
+            >
               <MapLibreGL.Terrain sourceID="terrain-dem" exaggeration={1.15} />
             </MapLibreGL.RasterDemSource>
           </>
@@ -207,7 +267,10 @@ export const MapLibreMapView = ({ route, vehicle, cameraMode, showGreenWaveOverl
         </MapLibreGL.ShapeSource>
 
         {showGreenWaveOverlay ? (
-          <MapLibreGL.ShapeSource id="greenwave-overlay-source" shape={greenWaveGeoJson}>
+          <MapLibreGL.ShapeSource
+            id="greenwave-overlay-source"
+            shape={greenWaveGeoJson}
+          >
             <MapLibreGL.CircleLayer
               id="greenwave-overlay"
               style={{
@@ -225,8 +288,14 @@ export const MapLibreMapView = ({ route, vehicle, cameraMode, showGreenWaveOverl
       {mapError ? (
         <View style={{ position: 'absolute', bottom: 12, left: 12, right: 12 }}>
           <GlassPanel>
-            <Text style={{ color: '#F6F9FF', fontWeight: '700', marginBottom: 6 }}>Map temporarily unavailable</Text>
-            <Text style={{ color: '#A9B5CC', marginBottom: 10 }}>{mapError}</Text>
+            <Text
+              style={{ color: '#F6F9FF', fontWeight: '700', marginBottom: 6 }}
+            >
+              Map temporarily unavailable
+            </Text>
+            <Text style={{ color: '#A9B5CC', marginBottom: 10 }}>
+              {mapError}
+            </Text>
             <Pressable
               onPress={() => {
                 setMapError(null);

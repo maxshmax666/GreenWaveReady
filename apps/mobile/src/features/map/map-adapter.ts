@@ -2,10 +2,11 @@ import type React from 'react';
 import type { Route, VehicleState } from '@greenwave/types';
 
 export type MapAdapterProps = {
-  route?: Route;
-  vehicle?: VehicleState;
+  route: Route | undefined;
+  vehicle: VehicleState | undefined;
   cameraMode: 'follow' | 'overview';
   showGreenWaveOverlay: boolean;
+  routeProgress: number;
 };
 
 export interface MapAdapter {
