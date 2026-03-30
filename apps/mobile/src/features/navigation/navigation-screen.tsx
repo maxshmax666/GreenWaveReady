@@ -1,10 +1,16 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { deriveCameraModel, projectProgress } from '@greenwave/navigation-core';
 import { GlassPanel, MetricText } from '@greenwave/ui';
 import { MapLibreMapView } from '../map/maplibre-map-view';
 import { useNavigationStore } from '../../state/navigation-store';
+import {
+  selectControlsState,
+  selectMapState,
+  selectRouteState,
+  selectSimulationState,
+} from '../../state/selectors';
+import { useDerivedMetrics } from '../../state/use-derived-metrics';
 import {
   fetchRoutes,
   RoutingHttpError,
@@ -12,18 +18,26 @@ import {
 } from '../../services/routing-client';
 import { nextVehicleState } from '../../simulation/simulator';
 import { DebugHud } from '../debug/debug-hud';
+import { useShallow } from 'zustand/react/shallow';
 
 const RETRYABLE_HTTP_STATUS = new Set([429, 500, 502, 503, 504]);
+const VEHICLE_RAW_UPDATE_INTERVAL_MS = 100;
+const UI_METRICS_UPDATE_INTERVAL_MS = 1_000;
 
 export const NavigationScreen = (): React.JSX.Element => {
-  const activeRoute = useNavigationStore((s) => s.activeRoute);
-  const setRoute = useNavigationStore((s) => s.setRoute);
-  const setVehicleState = useNavigationStore((s) => s.setVehicleState);
-  const vehicleState = useNavigationStore((s) => s.vehicleState);
-  const cameraMode = useNavigationStore((s) => s.cameraMode);
-  const setCameraMode = useNavigationStore((s) => s.setCameraMode);
-  const toggleSimulation = useNavigationStore((s) => s.toggleSimulation);
-  const simulationEnabled = useNavigationStore((s) => s.simulationEnabled);
+  const { activeRoute, setRoute } = useNavigationStore(
+    useShallow(selectRouteState),
+  );
+  const { simulationEnabled, vehicleState, setVehicleState } =
+    useNavigationStore(useShallow(selectSimulationState));
+  const { cameraMode, setCameraMode, toggleSimulation } = useNavigationStore(
+    useShallow(selectControlsState),
+  );
+  const {
+    activeRoute: mapRoute,
+    vehicleState: mapVehicle,
+    cameraMode: mapCameraMode,
+  } = useNavigationStore(useShallow(selectMapState));
   const tickRef = useRef<number>(0);
   const vehicleStateRef = useRef(vehicleState);
 
@@ -76,7 +90,7 @@ export const NavigationScreen = (): React.JSX.Element => {
     if (!simulationEnabled || !activeRoute) {
       return;
     }
-    const intervalMs = 1100;
+    const intervalMs = VEHICLE_RAW_UPDATE_INTERVAL_MS;
     const id = setInterval(() => {
       if (!activeRoute) {
         return;
@@ -94,14 +108,9 @@ export const NavigationScreen = (): React.JSX.Element => {
     return () => clearInterval(id);
   }, [activeRoute, setVehicleState, simulationEnabled]);
 
-  const progress = useMemo(() => {
-    if (!activeRoute || !vehicleState) {
-      return 0;
-    }
-    return projectProgress(activeRoute.geometry, vehicleState);
-  }, [activeRoute, vehicleState]);
-
-  const camera = deriveCameraModel(vehicleState?.speedKph ?? 0);
+  const { progress, etaSeconds, cameraPitch } = useDerivedMetrics(
+    UI_METRICS_UPDATE_INTERVAL_MS,
+  );
 
   const routeUiState: 'loading' | 'degraded' | 'failed' | 'ready' =
     (isPending || isFetching) && !activeRoute
@@ -119,7 +128,7 @@ export const NavigationScreen = (): React.JSX.Element => {
         ? 'Маршрут обновить не удалось, используется кэш'
         : routeUiState === 'failed'
           ? 'Маршрут недоступен'
-          : 'in 1.2 km • ETA 14 min';
+          : `ETA ${Math.ceil(etaSeconds / 60)} min`;
 
   const errorDetails =
     isError && error instanceof Error ? error.message : 'Unknown routing error';
@@ -137,9 +146,14 @@ export const NavigationScreen = (): React.JSX.Element => {
         <Text style={{ color: '#8D95A8' }}>{statusText}</Text>
         {(routeUiState === 'degraded' || routeUiState === 'failed') && (
           <>
-            <Text style={{ color: '#8D95A8', marginTop: 6 }}>{errorDetails}</Text>
+            <Text style={{ color: '#8D95A8', marginTop: 6 }}>
+              {errorDetails}
+            </Text>
             <View style={{ marginTop: 8 }}>
-              <ActionButton title="Retry" onPress={() => void retryRouteFetch()} />
+              <ActionButton
+                title="Retry"
+                onPress={() => void retryRouteFetch()}
+              />
             </View>
           </>
         )}
@@ -147,9 +161,9 @@ export const NavigationScreen = (): React.JSX.Element => {
 
       <View style={{ flex: 1 }}>
         <MapLibreMapView
-          route={activeRoute}
-          vehicle={vehicleState}
-          cameraMode={cameraMode}
+          route={mapRoute}
+          vehicle={mapVehicle}
+          cameraMode={mapCameraMode}
           showGreenWaveOverlay
           routeProgress={progress}
         />
@@ -164,7 +178,7 @@ export const NavigationScreen = (): React.JSX.Element => {
           label="Speed"
         />
         <MetricText value={`${Math.round(progress * 100)}%`} label="Progress" />
-        <MetricText value={`${camera.pitch.toFixed(0)}°`} label="Pitch" />
+        <MetricText value={`${cameraPitch.toFixed(0)}°`} label="Pitch" />
       </GlassPanel>
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
