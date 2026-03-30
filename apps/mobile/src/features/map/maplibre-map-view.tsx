@@ -1,13 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import MapLibreGL from '@maplibre/maplibre-react-native';
+import MapLibreGL, { type CameraRef } from '@maplibre/maplibre-react-native';
 import { runtimeConfig } from '@greenwave/config';
 import { GlassPanel } from '@greenwave/ui';
 import type { MapAdapterProps } from './map-adapter';
-import {
-  useCameraController,
-  type MapCameraController,
-} from '../navigation/use-camera-controller';
+import { useCameraController } from '../navigation/use-camera-controller';
 import {
   DrivingCameraController,
   type CameraMode,
@@ -78,7 +75,7 @@ export const MapLibreMapView = ({
     });
   }, [cameraMode, routeProgress, vehicle]);
 
-  const cameraRef = useRef<MapCameraController | null>(null);
+  const cameraRef = useRef<CameraRef | null>(null);
 
   useCameraController({
     vehicleState: vehicle,
@@ -221,12 +218,8 @@ export const MapLibreMapView = ({
         key={mapRenderEpoch}
         style={{ flex: 1 }}
         styleURL={runtimeConfig.mapStyleUrl}
-        onDidFailLoadingMap={(event: {
-          nativeEvent?: { message?: string };
-        }) => {
-          setMapError(
-            event.nativeEvent?.message ?? 'Failed to load map style or tiles.',
-          );
+        onDidFailLoadingMap={() => {
+          setMapError('Failed to load map style or tiles.');
         }}
         onDidFinishLoadingStyle={() => {
           if (mapError) {
@@ -235,7 +228,7 @@ export const MapLibreMapView = ({
         }}
       >
         <MapLibreGL.Camera
-          ref={cameraRef as React.RefObject<unknown>}
+          ref={cameraRef}
           centerCoordinate={centerCoordinate}
           zoomLevel={cameraModel?.zoom ?? 13.6}
           pitch={cameraModel?.pitch ?? 35}
