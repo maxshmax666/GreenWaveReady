@@ -1,6 +1,9 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import MapLibreGL, { type CameraRef } from '@maplibre/maplibre-react-native';
+import MapLibreGL, {
+  type CameraRef,
+  type MapViewProps,
+} from '@maplibre/maplibre-react-native';
 import { runtimeConfig } from '@greenwave/config';
 import { GlassPanel } from '@greenwave/ui';
 import type { MapAdapterProps } from './map-adapter';
@@ -209,6 +212,11 @@ export const MapLibreMapView = ({
     };
   }, [resolvedVehicle]);
 
+  const onDidFailLoadingMap: NonNullable<MapViewProps['onDidFailLoadingMap']> =
+    () => {
+      setMapError('Failed to load map style or tiles.');
+    };
+
   const centerCoordinate = resolvedVehicle
     ? ([resolvedVehicle.coordinate.lng, resolvedVehicle.coordinate.lat] as [
         number,
@@ -230,9 +238,7 @@ export const MapLibreMapView = ({
         key={mapRenderEpoch}
         style={{ flex: 1 }}
         styleURL={runtimeConfig.mapStyleUrl}
-        onDidFailLoadingMap={() => {
-          setMapError('Failed to load map style or tiles.');
-        }}
+        onDidFailLoadingMap={onDidFailLoadingMap}
         onDidFinishLoadingStyle={() => {
           if (mapError) {
             setMapError(null);
