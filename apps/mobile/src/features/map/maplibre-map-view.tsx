@@ -8,7 +8,12 @@ import {
   useCameraController,
   type MapCameraController,
 } from '../navigation/use-camera-controller';
-import { deriveCameraModel } from '@greenwave/navigation-core';
+import {
+  DrivingCameraController,
+  type CameraMode,
+  toLngLat,
+} from '@greenwave/map-core';
+import { ThreeWorldManager } from '@greenwave/three-world';
 
 const GREEN_WAVE_POINT_INTERVAL = 6;
 
@@ -31,23 +36,47 @@ const emptyFeatureCollection = <
   features: [],
 });
 
+const cameraController = new DrivingCameraController();
+
 export const MapLibreMapView = ({
   route,
   vehicle,
   cameraMode,
   showGreenWaveOverlay,
   routeProgress,
+  showRouteLine,
+  showPassedRoute,
+  showThreeWorld,
+  qualityMode,
 }: MapAdapterProps): React.JSX.Element => {
   const [mapRenderEpoch, setMapRenderEpoch] = useState(0);
   const [mapError, setMapError] = useState<string | null>(null);
 
   const routeCoordinates = useMemo(
-    () =>
-      route?.geometry.map(
-        (point) => [point.lng, point.lat] as [number, number],
-      ) ?? [],
+    () => route?.geometry.map(toLngLat) ?? [],
     [route],
   );
+
+  const passedCoordinates = useMemo(() => {
+    if (routeCoordinates.length < 2 || routeProgress <= 0) {
+      return [] as [number, number][];
+    }
+
+    const cutoffIndex = Math.max(1, Math.floor(routeCoordinates.length * routeProgress));
+    return routeCoordinates.slice(0, cutoffIndex);
+  }, [routeCoordinates, routeProgress]);
+
+  const cameraModel = useMemo(() => {
+    if (!vehicle) {
+      return null;
+    }
+
+    return cameraController.nextFrame({
+      vehicle,
+      mode: cameraMode as CameraMode,
+      routeProgress,
+    });
+  }, [cameraMode, routeProgress, vehicle]);
 
   const cameraRef = useRef<MapCameraController | null>(null);
 
@@ -56,12 +85,26 @@ export const MapLibreMapView = ({
     cameraMode,
     routeProgress,
     routePolyline: route?.geometry ?? [],
-    deriveCameraModel,
+    deriveCameraModel: () => ({
+      lookAheadMeters: cameraModel?.zoom ?? 50,
+      pitch: cameraModel?.pitch ?? 40,
+      zoom: cameraModel?.zoom ?? 14,
+    }),
     cameraRef,
   });
 
+  const worldRef = useRef(new ThreeWorldManager());
+  worldRef.current.setQuality(qualityMode);
+  worldRef.current.sync({
+    cameraBearing: cameraModel?.heading ?? vehicle?.headingDeg ?? 0,
+    cameraPitch: cameraModel?.pitch ?? 30,
+    center: vehicle?.coordinate ?? route?.geometry[0] ?? { lat: 55.751, lng: 37.617 },
+    routeCorridor: route?.geometry ?? [],
+    ...(vehicle ? { vehicle } : {}),
+  });
+
   const routeGeoJson = useMemo<GeoFeatureCollection<GeoLineString>>(() => {
-    if (routeCoordinates.length < 2) {
+    if (routeCoordinates.length < 2 || !showRouteLine) {
       return emptyFeatureCollection<GeoLineString>();
     }
 
@@ -75,7 +118,24 @@ export const MapLibreMapView = ({
         },
       ],
     };
-  }, [routeCoordinates]);
+  }, [routeCoordinates, showRouteLine]);
+
+  const passedGeoJson = useMemo<GeoFeatureCollection<GeoLineString>>(() => {
+    if (passedCoordinates.length < 2 || !showPassedRoute) {
+      return emptyFeatureCollection<GeoLineString>();
+    }
+
+    return {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: passedCoordinates },
+          properties: {},
+        },
+      ],
+    };
+  }, [passedCoordinates, showPassedRoute]);
 
   const maneuverGeoJson = useMemo<GeoFeatureCollection<GeoPoint>>(() => {
     if (!route || route.maneuvers.length === 0) {
@@ -147,13 +207,6 @@ export const MapLibreMapView = ({
     ? ([vehicle.coordinate.lng, vehicle.coordinate.lat] as [number, number])
     : (routeCoordinates[0] ?? [37.617, 55.751]);
 
-  const terrainEnabled = Boolean(
-    (MapLibreGL as unknown as { Terrain?: unknown }).Terrain,
-  );
-  const skyEnabled = Boolean(
-    (MapLibreGL as unknown as { SkyLayer?: unknown }).SkyLayer,
-  );
-
   return (
     <View
       style={{
@@ -184,60 +237,31 @@ export const MapLibreMapView = ({
         <MapLibreGL.Camera
           ref={cameraRef as React.RefObject<unknown>}
           centerCoordinate={centerCoordinate}
-          zoomLevel={13.6}
-          pitch={35}
+          zoomLevel={cameraModel?.zoom ?? 13.6}
+          pitch={cameraModel?.pitch ?? 35}
+          heading={cameraModel?.heading ?? 0}
         />
 
-        <MapLibreGL.VectorSource
-          id="greenwave-base"
-          tileUrlTemplates={[runtimeConfig.mapTileEndpoint]}
-        >
-          <MapLibreGL.FillExtrusionLayer
-            id="buildings-3d"
-            sourceLayerID="building"
-            minZoomLevel={14}
-            style={{
-              fillExtrusionColor: '#4B648E',
-              fillExtrusionOpacity: 0.42,
-              fillExtrusionHeight: ['coalesce', ['get', 'height'], 10],
-              fillExtrusionBase: ['coalesce', ['get', 'min_height'], 0],
-            }}
-          />
-        </MapLibreGL.VectorSource>
-
-        {terrainEnabled ? (
-          <>
-            <MapLibreGL.RasterDemSource
-              id="terrain-dem"
-              tileUrlTemplates={[runtimeConfig.mapTileEndpoint]}
-              tileSize={256}
-            >
-              <MapLibreGL.Terrain sourceID="terrain-dem" exaggeration={1.15} />
-            </MapLibreGL.RasterDemSource>
-          </>
-        ) : null}
-
-        {skyEnabled ? (
-          <MapLibreGL.SkyLayer
-            id="map-sky"
-            style={{
-              skyType: 'atmosphere',
-              skyAtmosphereColor: '#4FA3FF',
-              skyAtmosphereSun: [0.0, 90.0],
-              skyAtmosphereSunIntensity: 8,
-            }}
-          />
-        ) : null}
-
         <MapLibreGL.ShapeSource id="route-shape" shape={routeGeoJson}>
+          <MapLibreGL.LineLayer
+            id="route-base"
+            style={{ lineColor: '#203458', lineWidth: 10, lineCap: 'round' }}
+          />
           <MapLibreGL.LineLayer
             id="route-line"
             style={{
               lineColor: '#69A8FF',
-              lineWidth: 5,
+              lineWidth: 6,
               lineCap: 'round',
               lineJoin: 'round',
             }}
+          />
+        </MapLibreGL.ShapeSource>
+
+        <MapLibreGL.ShapeSource id="passed-route" shape={passedGeoJson}>
+          <MapLibreGL.LineLayer
+            id="passed-route-line"
+            style={{ lineColor: '#2EEA88', lineWidth: 5, lineCap: 'round' }}
           />
         </MapLibreGL.ShapeSource>
 
@@ -285,6 +309,19 @@ export const MapLibreMapView = ({
         ) : null}
       </MapLibreGL.MapView>
 
+      {showThreeWorld ? (
+        <View style={{ position: 'absolute', top: 12, left: 12 }}>
+          <GlassPanel>
+            <Text style={{ color: '#EAF1FF', fontSize: 12, fontWeight: '600' }}>
+              3D World active · {qualityMode}
+            </Text>
+            <Text style={{ color: '#9EB0CC', fontSize: 11 }}>
+              Objects: {worldRef.current.getObjects().length}
+            </Text>
+          </GlassPanel>
+        </View>
+      ) : null}
+
       {mapError ? (
         <View style={{ position: 'absolute', bottom: 12, left: 12, right: 12 }}>
           <GlassPanel>
@@ -293,9 +330,7 @@ export const MapLibreMapView = ({
             >
               Map temporarily unavailable
             </Text>
-            <Text style={{ color: '#A9B5CC', marginBottom: 10 }}>
-              {mapError}
-            </Text>
+            <Text style={{ color: '#A9B5CC', marginBottom: 10 }}>{mapError}</Text>
             <Pressable
               onPress={() => {
                 setMapError(null);

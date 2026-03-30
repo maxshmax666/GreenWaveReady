@@ -18,7 +18,13 @@
     "react": "^19.0.0",
     "react-native": "^0.79.0",
     "zustand": "^5.0.3",
-    "@maplibre/maplibre-react-native": "10.1.36"
+    "@maplibre/maplibre-react-native": "10.1.36",
+    "@greenwave/map-core": "0.1.0",
+    "@greenwave/three-world": "0.1.0",
+    "@react-navigation/native": "^7.1.10",
+    "@react-navigation/native-stack": "^7.3.14",
+    "react-native-screens": "^4.9.0",
+    "react-native-safe-area-context": "^5.4.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.12",

@@ -1,8 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { RoutingProvider } from '../providers/routing-provider';
+import type { RouteService } from '../services/route-service';
 
 const coord = z.object({ lat: z.number(), lng: z.number() }).strict();
+const routeInput = z
+  .object({
+    origin: coord,
+    destination: coord,
+    waypoints: z.array(coord).optional(),
+    profile: z.literal('car'),
+    avoidTolls: z.boolean().optional(),
+  })
+  .strict();
 
 const greenWaveHintSchema = z
   .object({
@@ -45,48 +54,19 @@ const routeSchema = z
   })
   .strict();
 
-const routeInput = z
-  .object({
-    origin: coord,
-    destination: coord,
-    waypoints: z.array(coord).optional(),
-    profile: z.literal('car'),
-    avoidTolls: z.boolean().optional(),
-  })
-  .strict();
-
 const routesResponseSchema = z.object({ routes: z.array(routeSchema).min(1) }).strict();
-
-const recalcRequestSchema = routeInput
-  .extend({
-    reason: z.enum(['off_route', 'traffic_event', 'user_request']),
-    metadata: z
-      .object({
-        previousRouteId: z.string().min(1).optional(),
-        deviationMeters: z.number().nonnegative().optional(),
-        trafficEventId: z.string().min(1).optional(),
-        requestedBy: z.enum(['driver', 'system']).optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
-
-const recalcResponseSchema = z
-  .object({
-    routes: z.array(routeSchema).min(1),
-    reason: z.enum(['off_route', 'traffic_event', 'user_request']),
-    metadata: z
-      .object({
-        previousRouteId: z.string().min(1).optional(),
-        deviationMeters: z.number().nonnegative().optional(),
-        trafficEventId: z.string().min(1).optional(),
-        requestedBy: z.enum(['driver', 'system']).optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
+const recalcRequestSchema = routeInput.extend({
+  reason: z.enum(['off_route', 'traffic_event', 'user_request']),
+  metadata: z
+    .object({
+      previousRouteId: z.string().min(1).optional(),
+      deviationMeters: z.number().nonnegative().optional(),
+      trafficEventId: z.string().min(1).optional(),
+      requestedBy: z.enum(['driver', 'system']).optional(),
+    })
+    .strict()
+    .optional(),
+});
 
 const mapMatchRequestSchema = z
   .object({
@@ -104,27 +84,6 @@ const mapMatchRequestSchema = z
       )
       .min(2),
     profile: z.literal('car'),
-  })
-  .strict();
-
-const mapMatchResponseSchema = z
-  .object({
-    provider: z.string().min(1),
-    matchedPath: z.array(coord).min(2),
-    matchedPoints: z
-      .array(
-        z
-          .object({
-            original: coord,
-            matched: coord,
-            distanceFromTraceMeters: z.number().nonnegative(),
-            confidence: z.number().min(0).max(1),
-            roadClass: z.enum(['motorway', 'primary', 'secondary', 'residential', 'service']).optional(),
-          })
-          .strict(),
-      )
-      .min(2),
-    confidence: z.number().min(0).max(1),
   })
   .strict();
 
@@ -157,17 +116,37 @@ const toMapMatchRequest = (input: z.infer<typeof mapMatchRequestSchema>) => ({
   })),
 });
 
-export const registerNavigationRoutes = (app: FastifyInstance, routingProvider: RoutingProvider): void => {
+
+const toRecalculateMetadata = (
+  metadata: z.infer<typeof recalcRequestSchema>['metadata'],
+) => {
+  if (!metadata) {
+    return undefined;
+  }
+
+  return {
+    ...(metadata.previousRouteId ? { previousRouteId: metadata.previousRouteId } : {}),
+    ...(metadata.deviationMeters !== undefined ? { deviationMeters: metadata.deviationMeters } : {}),
+    ...(metadata.trafficEventId ? { trafficEventId: metadata.trafficEventId } : {}),
+    ...(metadata.requestedBy ? { requestedBy: metadata.requestedBy } : {}),
+  };
+};
+
+export const registerNavigationRoutes = (
+  app: FastifyInstance,
+  routeService: RouteService,
+): void => {
   app.post('/routes', async (request, reply) => {
     const parsed = routeInput.safeParse(request.body);
     if (!respondIfInvalid(reply, parsed)) {
       return;
     }
 
-    const routes = await routingProvider.route(toRoutingRequest(parsed.data));
+    const routes = await routeService.calculateRoutes(toRoutingRequest(parsed.data));
     const response = routesResponseSchema.safeParse({ routes });
+
     if (!response.success) {
-      request.log.error({ error: response.error.flatten() }, 'Routing provider returned invalid /routes payload');
+      request.log.error({ error: response.error.flatten() }, 'Invalid /routes payload after normalization');
       return reply.status(502).send({ error: 'Invalid routing response payload' });
     }
 
@@ -180,18 +159,7 @@ export const registerNavigationRoutes = (app: FastifyInstance, routingProvider: 
       return;
     }
 
-    const routes = await routingProvider.route(toRoutingRequest(parsed.data));
-    const response = recalcResponseSchema.safeParse({
-      routes,
-      reason: parsed.data.reason,
-      metadata: parsed.data.metadata,
-    });
-    if (!response.success) {
-      request.log.error({ error: response.error.flatten() }, 'Routing provider returned invalid /routes/recalculate payload');
-      return reply.status(502).send({ error: 'Invalid routing response payload' });
-    }
-
-    return response.data;
+    return routeService.recalculateRoutes(toRoutingRequest(parsed.data), parsed.data.reason, toRecalculateMetadata(parsed.data.metadata));
   });
 
   app.post('/map-match', async (request, reply) => {
@@ -200,13 +168,6 @@ export const registerNavigationRoutes = (app: FastifyInstance, routingProvider: 
       return;
     }
 
-    const matched = await routingProvider.mapMatch(toMapMatchRequest(parsed.data));
-    const response = mapMatchResponseSchema.safeParse(matched);
-    if (!response.success) {
-      request.log.error({ error: response.error.flatten() }, 'Routing provider returned invalid /map-match payload');
-      return reply.status(502).send({ error: 'Invalid map-match response payload' });
-    }
-
-    return response.data;
+    return routeService.mapMatch(toMapMatchRequest(parsed.data));
   });
 };

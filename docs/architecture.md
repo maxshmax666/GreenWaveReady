@@ -1,39 +1,83 @@
-# GreenWaveReady architecture draft
+# GreenWaveReady architecture
 
-## Runtime topology
+## 1) Layered runtime model
 
 ```txt
-Mobile App (React Native)
-   |  Route requests, telemetry
-   v
-Navigation API (Fastify)
-   |  RoutingProvider abstraction
-   v
-Routing backend (Mock now, Valhalla later)
-
-Green Wave module (placeholder contracts) can run in API process for MVP,
-then split into dedicated service once prediction workloads increase.
+Layer A — Base Map Layer (MapLibre)
+  - tiles, roads, labels, projection, camera primitives
+Layer B — 3D World Layer (Three.js contracts)
+  - trees/buildings/vehicle scene objects, quality modes, sync state
+Layer C — Navigation Layer
+  - route progress, camera policy, maneuver/ETA/passed-route state
+Layer D — Backend Layer (Fastify)
+  - route compute, route normalization, alternatives, telemetry placeholders
 ```
 
-## Design options and trade-offs
+## 2) Mobile architecture
 
-### Option A: Modular monolith (chosen for MVP)
-- **Pros**: fastest delivery, lower ops overhead, easy local startup.
-- **Cons**: CPU-heavy prediction jobs may contend with route API latency.
+```txt
+apps/mobile
+  src/app
+    navigation-root.tsx
+  src/features
+    route-planning/
+    active-navigation/
+    navigation/
+    map/
+    debug/
+    settings/
+  src/state
+    routeSlice.ts
+    vehicleSlice.ts
+    uiSlice.ts
+```
 
-### Option B: Split green-wave engine early
-- **Pros**: isolated scaling and deployments for prediction workloads.
-- **Cons**: more infra complexity before product-market fit.
+### Responsibilities split
 
-## Current extension points
+- `MapLibreMapView` is authoritative for camera + route geodata rendering.
+- `@greenwave/map-core` encapsulates camera frame policy and coordinate helpers.
+- `@greenwave/three-world` encapsulates scene synchronization and density/quality policies.
+- `@greenwave/navigation-core` owns progress and location pipeline logic.
 
-- `RoutingProvider` interface in API to swap Mock/Valhalla/Commercial routing.
-- `MapAdapter` boundary in mobile to swap MapLibre style/tile sources.
-- Shared domain contracts in `packages/types` for traffic-light entities and corridor overlays.
-- Simulation mode and debug HUD to tune camera, route progress and map-matching behavior.
+## 3) API architecture
 
-## Bottlenecks to profile first
+```txt
+apps/api
+  providers/
+    routing-provider.ts        # interface
+    mock-routing-provider.ts   # MVP provider
+  services/
+    route-service.ts           # use cases
+  normalizers/
+    route-normalizer.ts        # provider payload hardening
+  routes/
+    navigation.ts
+    green-wave.ts
+```
 
-1. Route polyline rendering and rerender churn (React profiler + flamegraph).
-2. GPS smoothing on UI thread (keep in isolated hooks and memoized selectors).
-3. API tail latency during reroute bursts (k6/load tests + p95/p99 budgets).
+## 4) Performance notes
+
+- Route and passed-route layers are memoized GeoJSON fragments.
+- World objects are corridor-scoped and controlled by quality mode (`low|medium|high`).
+- Location pipeline filters heading harder at low speed to reduce jitter.
+- No heavy post-processing in MVP; effects are designed as optional future modules.
+
+## 5) Green-wave extension plan
+
+1. Add signal ingestion stream → persist into PostGIS.
+2. Add phase predictor worker (separate process when CPU pressure appears).
+3. Expose `/green-wave/corridors` with confidence envelopes.
+4. Render corridor confidence bands in route layer + world layer.
+5. Add speed-advice controller coupled to maneuver horizon.
+
+## 6) Trade-offs
+
+### Option A: Modular monolith (current)
+- ✅ Faster delivery and easier local dev.
+- ⚠️ Prediction workloads may compete with route API latency.
+
+### Option B: early split of predictor service
+- ✅ Better isolation and independent scaling.
+- ❌ More infra/ops overhead before product validation.
+
+Current choice: **Option A**, with contracts already prepared for future split.

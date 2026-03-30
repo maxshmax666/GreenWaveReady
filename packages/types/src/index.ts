@@ -1,7 +1,9 @@
-export type Coordinate = {
+export type LatLng = {
   lat: number;
   lng: number;
 };
+
+export type Coordinate = LatLng;
 
 export type GreenWaveHint = {
   speedBandKph: {
@@ -13,7 +15,10 @@ export type GreenWaveHint = {
     end: number;
   };
   confidence: number;
-  reason: 'sync_with_signal_timing' | 'clear_intersection_queue' | 'incident_avoidance';
+  reason:
+    | 'sync_with_signal_timing'
+    | 'clear_intersection_queue'
+    | 'incident_avoidance';
   source: 'green-wave-engine' | 'routing-provider';
 };
 
@@ -24,34 +29,56 @@ export type RouteAnnotation = {
   greenWaveHint?: GreenWaveHint;
 };
 
-export type Maneuver = {
+export type NavigationManeuver = {
   id: string;
   instruction: string;
   distanceMeters: number;
-  location: Coordinate;
+  location: LatLng;
   type: 'turn-left' | 'turn-right' | 'continue' | 'u-turn' | 'arrive';
 };
+
+export type Maneuver = NavigationManeuver;
 
 export type RouteSummary = {
   etaSeconds: number;
   distanceMeters: number;
 };
 
-export type Route = {
+export type NavigationRoute = {
   id: string;
-  geometry: Coordinate[];
+  geometry: LatLng[];
   summary: RouteSummary;
-  maneuvers: Maneuver[];
+  maneuvers: NavigationManeuver[];
   annotations: RouteAnnotation[];
 };
 
+export type Route = NavigationRoute;
+
 export type VehicleState = {
   timestamp: string;
-  coordinate: Coordinate;
+  coordinate: LatLng;
   headingDeg: number;
   speedKph: number;
   accuracyMeters: number;
   source: 'gps' | 'simulation' | 'map-match';
+};
+
+export type PositionPipelineState = {
+  rawGps: VehicleState;
+  filteredGps: VehicleState;
+  snappedPosition?: VehicleState;
+  renderedPosition: VehicleState;
+  rawHeadingDeg: number;
+  filteredHeadingDeg: number;
+  cameraBearingDeg: number;
+};
+
+export type RouteProgress = {
+  traveledMeters: number;
+  remainingMeters: number;
+  progress: number;
+  etaSeconds: number;
+  nextManeuver?: NavigationManeuver;
 };
 
 export type TrafficLight = {
@@ -84,9 +111,9 @@ export type CorridorSegment = {
 };
 
 export type RoutingRequest = {
-  origin: Coordinate;
-  destination: Coordinate;
-  waypoints?: Coordinate[];
+  origin: LatLng;
+  destination: LatLng;
+  waypoints?: LatLng[];
   profile: 'car';
   avoidTolls?: boolean;
 };
@@ -101,7 +128,7 @@ export type RecalculateMetadata = {
 };
 
 export type MapMatchTracePoint = {
-  coordinate: Coordinate;
+  coordinate: LatLng;
   timestamp: string;
   headingDeg?: number;
   speedKph?: number;
@@ -114,8 +141,8 @@ export type MapMatchRequest = {
 };
 
 export type MapMatchedPoint = {
-  original: Coordinate;
-  matched: Coordinate;
+  original: LatLng;
+  matched: LatLng;
   distanceFromTraceMeters: number;
   confidence: number;
   roadClass?: 'motorway' | 'primary' | 'secondary' | 'residential' | 'service';
@@ -123,7 +150,7 @@ export type MapMatchedPoint = {
 
 export type MapMatchResult = {
   provider: string;
-  matchedPath: Coordinate[];
+  matchedPath: LatLng[];
   matchedPoints: MapMatchedPoint[];
   confidence: number;
 };

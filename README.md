@@ -1,53 +1,59 @@
 # GreenWaveReady
 
-Production-grade monorepo foundation for a premium personal navigation app with 3D driving UX and Green Wave-ready architecture.
+Premium navigation monorepo foundation: **MapLibre = geospatial source of truth**, **Three.js layer = cinematic world enrichment**, **Fastify API = routing and green-wave-ready contracts**.
 
 ## Minimum requirements
 
 - Node.js **20.11.1+**
 - npm **10.8.2+**
+- Expo Go SDK 53 / iOS 16+ / Android 10+
 
 ## Monorepo layout
 
 ```txt
 apps/
-  mobile/              # React Native + Expo mobile client
-  api/                 # Fastify API and routing abstraction
+  mobile/              # React Native app + active driving mode + debug tools
+  api/                 # Fastify API + routing/normalization services
 packages/
-  types/               # Shared domain + contract types
-  navigation-core/     # Route progress, filtering and camera strategies
-  ui/                  # Reusable cross-feature UI primitives
-  utils/               # Shared utilities (timing, math, guards)
-  config/              # Shared runtime/config helpers
+  types/               # Domain contracts (LatLng, NavigationRoute, TrafficLight, ...)
+  navigation-core/     # Progress, camera model, position pipeline
+  map-core/            # MapLibre camera abstractions + coordinate helpers
+  three-world/         # Three.js world manager contracts + quality modes
+  ui/                  # Shared UI atoms
+  utils/               # Shared utilities
+  config/              # Runtime config
 infra/
-  docker/              # Local infra compose files
-  scripts/             # Dev scripts
+  docker/              # Postgres/PostGIS-ready compose baseline
 docs/
-  architecture.md      # Architecture and extension points
+  architecture.md      # Layer split, trade-offs, next milestones
 ```
 
-## Quick start
+## Setup
 
 ```bash
 npm install
 npm run typecheck
 npm run lint
-npm run test
+```
+
+## Run
+
+```bash
 npm run dev -w @greenwave/api
 npm run dev -w @greenwave/mobile
 ```
 
-## What is implemented in this draft
+## What is implemented
 
-- Mobile skeleton with modular map/navigation flow, simulation mode, debug HUD, follow/overview camera control and placeholders for MapLibre adapter.
-- API skeleton with `RoutingProvider` abstraction, telemetry ingestion placeholder, green-wave placeholder endpoints.
-- Shared route annotations model, vehicle state model, traffic-light prediction contracts.
-- Mock mode switches in both mobile and API.
+- React Navigation app shell with route planning, active navigation, and debug/settings screens.
+- Navigation MVP flow: route fetch, active route + passed route rendering, ETA/progress, follow/overview camera, vehicle marker.
+- Location pipeline split: raw GPS → filtered GPS → snapped/rendered position.
+- MapLibre abstraction and camera controller (`@greenwave/map-core`).
+- Three-world architecture (`@greenwave/three-world`) with quality modes (`low/medium/high`) and synchronized world object generation.
+- API layer with `RoutingProvider` + `RouteService` + `RouteNormalizer`, route/recalculate/map-match endpoints, telemetry and green-wave placeholders.
 
-## Key architecture choices
+## Why this split
 
-1. **Adapter boundaries from day 1**: map rendering and routing are swappable via interfaces.
-2. **Strict TS + isolated modules**: avoids giant navigation screens and uncontrolled state drift.
-3. **Green Wave as first-class domain package**: data contracts exist now, prediction engine can plug in later.
-
-See [docs/architecture.md](docs/architecture.md) for trade-offs and bottlenecks.
+- **Maintainability**: map rendering, world rendering, and routing are isolated by interfaces.
+- **Performance path**: quality mode and corridor-scoped object generation avoid full-scene overload on mobile.
+- **Green-wave readiness**: traffic light and corridor contracts already exist in shared types, so future prediction engines can be plugged into API + overlays without rewriting app foundations.

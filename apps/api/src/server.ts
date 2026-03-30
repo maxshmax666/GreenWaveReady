@@ -4,6 +4,8 @@ import Fastify from 'fastify';
 import { MockRoutingProvider } from './providers/mock-routing-provider';
 import { registerGreenWaveRoutes } from './routes/green-wave';
 import { registerNavigationRoutes } from './routes/navigation';
+import { DefaultRouteNormalizer } from './normalizers/route-normalizer';
+import { RouteService } from './services/route-service';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const PAYLOAD_SIZE_LIMIT_BYTES = 1_048_576;
@@ -69,9 +71,10 @@ const bootstrap = async (): Promise<void> => {
   });
 
   const routingProvider = new MockRoutingProvider();
+  const routeService = new RouteService(routingProvider, new DefaultRouteNormalizer());
 
   app.get('/health', async () => ({ status: 'ok', mockMode: runtimeConfig.mockMode }));
-  registerNavigationRoutes(app, routingProvider);
+  registerNavigationRoutes(app, routeService);
   registerGreenWaveRoutes(app);
 
   try {
