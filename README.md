@@ -38,10 +38,33 @@ npm run lint
 
 ## Run
 
+### API
+
 ```bash
 npm run dev -w @greenwave/api
+```
+
+### Mobile: Expo Go
+
+```bash
 npm run dev -w @greenwave/mobile
 ```
+
+Open the project in the Expo Go app (QR code / project list).
+
+### Mobile: Dev Client (MapLibre native)
+
+```bash
+npm run android -w @greenwave/mobile
+npm run dev:client -w @greenwave/mobile
+```
+
+For iOS dev build, use `npm run ios -w @greenwave/mobile` before `npm run dev:client -w @greenwave/mobile`.
+
+### Troubleshooting
+
+If you see a JSON manifest in the browser, the dev URL was opened with the wrong client.
+Use Expo Go for `npm run dev`, and use the installed Dev Client app for `npm run dev:client`.
 
 ## What is implemented
 
