@@ -3,7 +3,7 @@ import { SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { deriveCameraModel, projectProgress } from '@greenwave/navigation-core';
 import { GlassPanel, MetricText } from '@greenwave/ui';
-import { MockMapView } from '../map/mock-map-view';
+import { MapLibreMapView } from '../map/maplibre-map-view';
 import { useNavigationStore } from '../../state/navigation-store';
 import { fetchRoutes } from '../../services/routing-client';
 import { makeVehicleState } from '../../simulation/simulator';
@@ -65,7 +65,7 @@ export const NavigationScreen = (): React.JSX.Element => {
       </GlassPanel>
 
       <View style={{ flex: 1 }}>
-        <MockMapView route={activeRoute} vehicle={vehicleState} cameraMode={cameraMode} showGreenWaveOverlay />
+        <MapLibreMapView route={activeRoute} vehicle={vehicleState} cameraMode={cameraMode} showGreenWaveOverlay />
         <DebugHud />
       </View>
 
