@@ -1,0 +1,14 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: greenwave
+      POSTGRES_PASSWORD: greenwave
+      POSTGRES_DB: greenwave
+    ports:
+      - '5432:5432'
+  redis:
+    image: redis:7.4
+    ports:
+      - '6379:6379'
