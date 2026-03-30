@@ -12,11 +12,27 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@greenwave/types": ["packages/types/src/index.ts"],
-      "@greenwave/utils": ["packages/utils/src/index.ts"],
-      "@greenwave/navigation-core": ["packages/navigation-core/src/index.ts"],
-      "@greenwave/config": ["packages/config/src/index.ts"],
-      "@greenwave/ui": ["packages/ui/src/index.tsx"]
+      "@greenwave/types": [
+        "packages/types/src/index.ts"
+      ],
+      "@greenwave/utils": [
+        "packages/utils/src/index.ts"
+      ],
+      "@greenwave/navigation-core": [
+        "packages/navigation-core/src/index.ts"
+      ],
+      "@greenwave/config": [
+        "packages/config/src/index.ts"
+      ],
+      "@greenwave/ui": [
+        "packages/ui/src/index.tsx"
+      ],
+      "@greenwave/map-core": [
+        "packages/map-core/src/index.ts"
+      ],
+      "@greenwave/three-world": [
+        "packages/three-world/src/index.ts"
+      ]
     }
   }
 }

@@ -16,6 +16,10 @@ export const selectMapState = (state: NavigationState) => ({
   activeRoute: state.activeRoute,
   vehicleState: state.vehicleState,
   cameraMode: state.cameraMode,
+  showRouteLine: state.showRouteLine,
+  showPassedRoute: state.showPassedRoute,
+  showThreeWorld: state.showThreeWorld,
+  objectDensity: state.objectDensity,
 });
 
 export const selectControlsState = (state: NavigationState) => ({
@@ -28,4 +32,6 @@ export const selectDebugHudState = (state: NavigationState) => ({
   debugHud: state.debugHud,
   vehicleState: state.vehicleState,
   activeRoute: state.activeRoute,
+  showThreeWorld: state.showThreeWorld,
+  objectDensity: state.objectDensity,
 });

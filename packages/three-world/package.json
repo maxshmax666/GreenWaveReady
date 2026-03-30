@@ -1,0 +1,14 @@
+{
+  "name": "@greenwave/three-world",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@greenwave/types": "0.1.0",
+    "three": "^0.179.1"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

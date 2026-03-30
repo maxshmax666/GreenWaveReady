@@ -11,6 +11,7 @@ import {
   selectSimulationState,
 } from '../../state/selectors';
 import { useDerivedMetrics } from '../../state/use-derived-metrics';
+import { buildPositionPipeline } from '@greenwave/navigation-core';
 import {
   fetchRoutes,
   RoutingHttpError,
@@ -37,9 +38,14 @@ export const NavigationScreen = (): React.JSX.Element => {
     activeRoute: mapRoute,
     vehicleState: mapVehicle,
     cameraMode: mapCameraMode,
+    showRouteLine,
+    showPassedRoute,
+    showThreeWorld,
+    objectDensity,
   } = useNavigationStore(useShallow(selectMapState));
   const tickRef = useRef<number>(0);
   const vehicleStateRef = useRef(vehicleState);
+  const pipelineRef = useRef<ReturnType<typeof buildPositionPipeline> | undefined>(undefined);
 
   useEffect(() => {
     vehicleStateRef.current = vehicleState;
@@ -101,8 +107,10 @@ export const NavigationScreen = (): React.JSX.Element => {
         vehicleStateRef.current,
         intervalMs,
       );
-      vehicleStateRef.current = nextState;
-      setVehicleState(nextState);
+      const pipeline = buildPositionPipeline(nextState, pipelineRef.current);
+      pipelineRef.current = pipeline;
+      vehicleStateRef.current = pipeline.renderedPosition;
+      setVehicleState(pipeline.renderedPosition);
     }, intervalMs);
 
     return () => clearInterval(id);
@@ -163,9 +171,14 @@ export const NavigationScreen = (): React.JSX.Element => {
         <MapLibreMapView
           route={mapRoute}
           vehicle={mapVehicle}
+          pipeline={pipelineRef.current}
           cameraMode={mapCameraMode}
           showGreenWaveOverlay
           routeProgress={progress}
+          showRouteLine={showRouteLine}
+          showPassedRoute={showPassedRoute}
+          showThreeWorld={showThreeWorld}
+          qualityMode={objectDensity}
         />
         <DebugHud />
       </View>
