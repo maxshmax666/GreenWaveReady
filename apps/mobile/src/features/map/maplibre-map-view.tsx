@@ -1,9 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import MapLibreGL, {
-  type CameraRef,
-  type MapViewProps,
-} from '@maplibre/maplibre-react-native';
+import MapLibreGL, { type CameraRef } from '@maplibre/maplibre-react-native';
 import { runtimeConfig } from '@greenwave/config';
 import { GlassPanel } from '@greenwave/ui';
 import type { MapAdapterProps } from './map-adapter';
@@ -15,6 +12,7 @@ import {
 import { ThreeWorldManager } from '@greenwave/three-world';
 
 const GREEN_WAVE_POINT_INTERVAL = 6;
+type MapViewProps = React.ComponentProps<typeof MapLibreGL.MapView>;
 
 type GeoPoint = { type: 'Point'; coordinates: [number, number] };
 type GeoLineString = { type: 'LineString'; coordinates: [number, number][] };
@@ -253,7 +251,7 @@ export const MapLibreMapView = ({
       <MapLibreGL.MapView
         key={mapRenderEpoch}
         style={{ flex: 1 }}
-        styleURL={runtimeConfig.mapStyleUrl}
+        mapStyle={runtimeConfig.mapStyleUrl}
         onDidFailLoadingMap={onDidFailLoadingMap}
         onDidFinishLoadingStyle={() => {
           if (mapError) {
