@@ -48,17 +48,41 @@ jobs:
           npm -v
           java -version
 
+      - name: Fail fast on missing production env vars
+        run: |
+          required_vars=(
+            EXPO_PUBLIC_ROUTING_BASE_URL
+            EXPO_PUBLIC_MAP_STYLE_URL
+          )
+
+          missing=()
+          for var_name in "${required_vars[@]}"; do
+            if [[ -z "${!var_name:-}" ]]; then
+              missing+=("${var_name}")
+            fi
+          done
+
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            printf '%s\n' "[release-env] Missing required env var(s): ${missing[*]}"
+            printf '%s\n' "[release-env] Configure them in GitHub Actions secrets (or build profile env) before running release."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm install
 
-      - name: Validate mobile runtime env (production)
+      - name: Validate mobile env (production)
         env:
           MOBILE_ENV_MODE: production
-        run: npm run check:mobile-env
+        run: node scripts/validate-mobile-env.mjs
 
       - name: Prebuild Android
         working-directory: apps/mobile
-        run: npx expo prebuild --platform android --clean --non-interactive
+        env:
+          MOBILE_ENV_MODE: production
+        run: |
+          node ../../scripts/validate-mobile-env.mjs
+          npx expo prebuild --platform android --clean --non-interactive
 
       - name: Build release APK
         working-directory: apps/mobile/android

@@ -1,0 +1,17 @@
+{
+  "cli": {
+    "version": ">= 12.0.0"
+  },
+  "build": {
+    "production": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_ROUTING_BASE_URL": "https://routing.example.com",
+        "EXPO_PUBLIC_MAP_STYLE_URL": "https://maps.example.com/styles/greenwave.json",
+        "EXPO_PUBLIC_MAP_TILE_ENDPOINT": "https://tiles.example.com/tiles/{z}/{x}/{y}.pbf"
+      }
+    }
+  }
+}
