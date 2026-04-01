@@ -9,12 +9,15 @@ export const selectSimulationState = (state: NavigationState) => ({
   activeRoute: state.activeRoute,
   simulationEnabled: state.simulationEnabled,
   vehicleState: state.vehicleState,
+  deviceLocation: state.deviceLocation,
   setVehicleState: state.setVehicleState,
+  setDeviceLocation: state.setDeviceLocation,
 });
 
 export const selectMapState = (state: NavigationState) => ({
   activeRoute: state.activeRoute,
   vehicleState: state.vehicleState,
+  deviceLocation: state.deviceLocation,
   cameraMode: state.cameraMode,
   showRouteLine: state.showRouteLine,
   showPassedRoute: state.showPassedRoute,

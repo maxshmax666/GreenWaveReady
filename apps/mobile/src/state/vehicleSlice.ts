@@ -8,4 +8,5 @@ export const createVehicleSlice: StateCreator<
   VehicleSlice
 > = (set) => ({
   setVehicleState: (vehicleState) => set({ vehicleState }),
+  setDeviceLocation: (deviceLocation) => set({ deviceLocation }),
 });

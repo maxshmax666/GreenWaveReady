@@ -6,6 +6,7 @@ import { VehicleMarker } from '../../components/vehicle-marker';
 export const MockMapView = ({
   route,
   vehicle,
+  deviceLocation,
   cameraMode,
   showGreenWaveOverlay,
   routeProgress,
@@ -33,6 +34,9 @@ export const MockMapView = ({
     </Text>
     <Text style={{ color: '#D5DEEF' }}>
       Progress: {Math.round(routeProgress * 100)}%
+    </Text>
+    <Text style={{ color: '#D5DEEF' }}>
+      GPS: {deviceLocation ? `${deviceLocation.accuracyMeters}m` : 'searching'}
     </Text>
     <VehicleMarker headingDeg={vehicle?.headingDeg ?? 0} />
   </View>

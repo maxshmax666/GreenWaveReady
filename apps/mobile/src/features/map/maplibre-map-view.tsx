@@ -38,6 +38,7 @@ const cameraController = new DrivingCameraController();
 export const MapLibreMapView = ({
   route,
   vehicle,
+  deviceLocation,
   pipeline,
   cameraMode,
   showGreenWaveOverlay,
@@ -65,23 +66,25 @@ export const MapLibreMapView = ({
   }, [routeCoordinates, routeProgress]);
 
   const resolvedVehicle = vehicle ?? pipeline?.renderedPosition;
+  const routeStart = route?.geometry[0];
 
   const cameraModel = useMemo(() => {
-    if (!resolvedVehicle) {
+    const cameraVehicle = deviceLocation ?? resolvedVehicle;
+    if (!cameraVehicle) {
       return null;
     }
 
     return cameraController.nextFrame({
-      vehicle: resolvedVehicle,
+      vehicle: cameraVehicle,
       mode: cameraMode,
       routeProgress,
     });
-  }, [cameraMode, resolvedVehicle, routeProgress]);
+  }, [cameraMode, deviceLocation, resolvedVehicle, routeProgress]);
 
   const cameraRef = useRef<CameraRef | null>(null);
 
   useCameraController({
-    vehicleState: resolvedVehicle,
+    vehicleState: deviceLocation ?? resolvedVehicle,
     cameraMode,
     routeProgress,
     routePolyline: route?.geometry ?? [],
@@ -96,11 +99,16 @@ export const MapLibreMapView = ({
   const worldRef = useRef(new ThreeWorldManager());
   worldRef.current.setQuality(qualityMode);
   worldRef.current.sync({
-    cameraBearing: cameraModel?.heading ?? resolvedVehicle?.headingDeg ?? 0,
+    cameraBearing:
+      cameraModel?.heading ??
+      deviceLocation?.headingDeg ??
+      resolvedVehicle?.headingDeg ??
+      0,
     cameraPitch: cameraModel?.pitch ?? 30,
     center:
+      deviceLocation?.coordinate ??
       resolvedVehicle?.coordinate ??
-      route?.geometry[0] ??
+      routeStart ??
       { lat: 55.751, lng: 37.617 },
     routeCorridor: route?.geometry ?? [],
     ...(resolvedVehicle ? { vehicle: resolvedVehicle } : {}),
@@ -209,14 +217,43 @@ export const MapLibreMapView = ({
     };
   }, [resolvedVehicle]);
 
+  const deviceLocationGeoJson = useMemo<GeoFeatureCollection<GeoPoint>>(() => {
+    if (!deviceLocation) {
+      return emptyFeatureCollection<GeoPoint>();
+    }
+
+    return {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [
+              deviceLocation.coordinate.lng,
+              deviceLocation.coordinate.lat,
+            ],
+          },
+          properties: {
+            accuracyMeters: deviceLocation.accuracyMeters,
+          },
+        },
+      ],
+    };
+  }, [deviceLocation]);
+
   const onDidFailLoadingMap: NonNullable<MapViewProps['onDidFailLoadingMap']> =
     () => {
       setMapError('Failed to load map style or tiles.');
     };
 
-  const centerCoordinate: [number, number] = resolvedVehicle
-    ? [resolvedVehicle.coordinate.lng, resolvedVehicle.coordinate.lat]
-    : (routeCoordinates[0] ?? [37.617, 55.751]);
+  const centerCoordinate: [number, number] = deviceLocation
+    ? [deviceLocation.coordinate.lng, deviceLocation.coordinate.lat]
+    : resolvedVehicle
+      ? [resolvedVehicle.coordinate.lng, resolvedVehicle.coordinate.lat]
+      : routeStart
+        ? [routeStart.lng, routeStart.lat]
+        : [37.617, 55.751];
 
   return (
     <View
@@ -291,6 +328,21 @@ export const MapLibreMapView = ({
               circleColor: '#FFFFFF',
               circleStrokeColor: '#1A73E8',
               circleStrokeWidth: 3,
+            }}
+          />
+        </MapLibreGL.ShapeSource>
+
+        <MapLibreGL.ShapeSource
+          id="device-location-source"
+          shape={deviceLocationGeoJson}
+        >
+          <MapLibreGL.CircleLayer
+            id="device-location-puck"
+            style={{
+              circleRadius: 6,
+              circleColor: '#2EEA88',
+              circleStrokeColor: '#0D3D2B',
+              circleStrokeWidth: 2,
             }}
           />
         </MapLibreGL.ShapeSource>
