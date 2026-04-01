@@ -101,6 +101,34 @@ For iOS dev build, run `npm run ios -w @greenwave/mobile` before `npm run dev:cl
 If you see a JSON manifest in the browser, the dev URL was opened with the wrong client.
 Use Expo Go for `npm run dev`, and use the installed Dev Client app for `npm run dev:client`.
 
+### Android: build memory vs runtime env validation
+
+`org.gradle.jvmargs` in `apps/mobile/android/gradle.properties` affects only the Android/Gradle **build stage** (dexing, Kotlin/Java compilation, packaging). It does **not** affect runtime validation inside the launched app process.
+
+If APK/AAB installs successfully but the app crashes immediately on launch, treat it as a **runtime configuration** problem first, not a Gradle heap problem.
+
+| Symptom | Likely cause | How to verify | Fix |
+| --- | --- | --- | --- |
+| APK installed, app crashes on launch | Runtime env validation rejects missing/invalid public env variables (`EXPO_PUBLIC_*`) | Run `adb logcat` and find `[config] Missing required env...` or `[config] Invalid env...` signatures | Set required env values (`EXPO_PUBLIC_ROUTING_BASE_URL`, `EXPO_PUBLIC_MAP_STYLE_URL`) and rebuild |
+
+#### Android diagnostics (runtime)
+
+```bash
+# clear old logs to reduce noise
+adb logcat -c
+
+# start app, then stream only relevant lines
+adb logcat | rg "\[config\]|Missing required env|Invalid env"
+```
+
+Expected crash signatures:
+
+- `[config] Missing required env EXPO_PUBLIC_ROUTING_BASE_URL`
+- `[config] Missing required env EXPO_PUBLIC_MAP_STYLE_URL`
+- `[config] Invalid env EXPO_PUBLIC_ROUTING_BASE_URL: must be https and public host`
+
+> Increasing Gradle heap (`org.gradle.jvmargs=-Xmx...`) can fix build-time OOM, but it will **not** fix crash-after-launch caused by runtime env validation.
+
 ## What is implemented
 
 - React Navigation app shell with route planning, active navigation, and debug/settings screens.
