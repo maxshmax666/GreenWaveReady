@@ -87,12 +87,16 @@ const mapMatchRequestSchema = z
   })
   .strict();
 
-const respondIfInvalid = <T>(reply: { status: (code: number) => { send: (data: unknown) => unknown } }, parsed: z.SafeParseReturnType<unknown, T>): parsed is z.SafeParseSuccess<T> => {
+const respondIfInvalid = <T>(
+  requestId: string,
+  reply: { status: (code: number) => { send: (data: unknown) => unknown } },
+  parsed: z.SafeParseReturnType<unknown, T>,
+): parsed is z.SafeParseSuccess<T> => {
   if (parsed.success) {
     return true;
   }
 
-  reply.status(400).send({ error: parsed.error.format() });
+  reply.status(400).send({ error: parsed.error.format(), requestId });
   return false;
 };
 
@@ -137,8 +141,9 @@ export const registerNavigationRoutes = (
   routeService: RouteService,
 ): void => {
   app.post('/routes', async (request, reply) => {
+    reply.header('x-request-id', request.id);
     const parsed = routeInput.safeParse(request.body);
-    if (!respondIfInvalid(reply, parsed)) {
+    if (!respondIfInvalid(request.id, reply, parsed)) {
       return;
     }
 
@@ -146,16 +151,23 @@ export const registerNavigationRoutes = (
     const response = routesResponseSchema.safeParse({ routes });
 
     if (!response.success) {
-      request.log.error({ error: response.error.flatten() }, 'Invalid /routes payload after normalization');
-      return reply.status(502).send({ error: 'Invalid routing response payload' });
+      request.log.error(
+        { error: response.error.flatten(), requestId: request.id },
+        'Invalid /routes payload after normalization',
+      );
+      return reply.status(502).send({
+        error: 'Invalid routing response payload',
+        requestId: request.id,
+      });
     }
 
     return response.data;
   });
 
   app.post('/routes/recalculate', async (request, reply) => {
+    reply.header('x-request-id', request.id);
     const parsed = recalcRequestSchema.safeParse(request.body);
-    if (!respondIfInvalid(reply, parsed)) {
+    if (!respondIfInvalid(request.id, reply, parsed)) {
       return;
     }
 
@@ -163,8 +175,9 @@ export const registerNavigationRoutes = (
   });
 
   app.post('/map-match', async (request, reply) => {
+    reply.header('x-request-id', request.id);
     const parsed = mapMatchRequestSchema.safeParse(request.body);
-    if (!respondIfInvalid(reply, parsed)) {
+    if (!respondIfInvalid(request.id, reply, parsed)) {
       return;
     }
 

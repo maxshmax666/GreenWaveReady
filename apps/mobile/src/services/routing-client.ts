@@ -4,6 +4,25 @@ import type { Route, RoutingRequest } from '@greenwave/types';
 const ROUTING_TIMEOUT_MS = 9_000;
 const MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 300;
+const ROUTING_ENDPOINT_PATH = '/routes';
+const ROUTING_EVENT_NAME = 'routing_request';
+
+export type RoutingErrorType =
+  | 'TIMEOUT'
+  | 'NETWORK'
+  | 'HTTP_4XX'
+  | 'HTTP_5XX'
+  | 'PARSE'
+  | 'UNKNOWN';
+
+type RoutingRequestEvent = {
+  url: string;
+  latencyMs: number;
+  status: number | null;
+  errorType: RoutingErrorType | null;
+  requestId: string | null;
+  attempt: number;
+};
 
 export class RoutingHttpError extends Error {
   readonly status: number;
@@ -19,11 +38,13 @@ export class RoutingHttpError extends Error {
 
 export class RoutingTimeoutError extends Error {
   readonly timeoutMs: number;
+  readonly requestId: string | null;
 
-  constructor(timeoutMs: number) {
+  constructor(timeoutMs: number, requestId: string | null = null) {
     super(`Routing timed out after ${timeoutMs}ms`);
     this.name = 'RoutingTimeoutError';
     this.timeoutMs = timeoutMs;
+    this.requestId = requestId;
   }
 }
 
@@ -38,7 +59,30 @@ export class RoutingParseError extends Error {
 }
 
 const isRetryableHttpStatus = (status: number): boolean =>
-  status === 429 || (status >= 500 && status <= 599);
+  status >= 500 && status <= 599;
+
+const getRoutingUrl = (): string =>
+  `${runtimeConfig.routingBaseUrl}${ROUTING_ENDPOINT_PATH}`;
+
+const getRoutingErrorType = (error: unknown): RoutingErrorType => {
+  if (error instanceof RoutingTimeoutError) {
+    return 'TIMEOUT';
+  }
+
+  if (error instanceof RoutingParseError) {
+    return 'PARSE';
+  }
+
+  if (error instanceof RoutingHttpError) {
+    return error.status >= 500 ? 'HTTP_5XX' : 'HTTP_4XX';
+  }
+
+  if (error instanceof TypeError) {
+    return 'NETWORK';
+  }
+
+  return 'UNKNOWN';
+};
 
 const isAbortError = (error: unknown): boolean =>
   typeof error === 'object' &&
@@ -55,11 +99,6 @@ const isTransientRoutingError = (error: unknown): boolean => {
     return isRetryableHttpStatus(error.status);
   }
 
-  if (error instanceof TypeError) {
-    // RN/fetch network layer failures are often surfaced as TypeError and should be retried.
-    return true;
-  }
-
   return false;
 };
 
@@ -68,19 +107,41 @@ const wait = async (ms: number): Promise<void> =>
 
 const ERROR_BODY_LOG_LIMIT = 2_000;
 
-const tryFetchRoutes = async (input: RoutingRequest): Promise<Route[]> => {
+const reportRoutingEvent = (event: RoutingRequestEvent): void => {
+  console.info('[routing.event]', event);
+
+  const sentry = (globalThis as { Sentry?: { addBreadcrumb?: (payload: unknown) => void } }).Sentry;
+  sentry?.addBreadcrumb?.({
+    category: 'routing',
+    level: event.errorType ? 'error' : 'info',
+    message: ROUTING_EVENT_NAME,
+    data: event,
+  });
+
+  const datadog = (
+    globalThis as {
+      DD_RUM?: { addAction?: (name: string, context?: Record<string, unknown>) => void };
+    }
+  ).DD_RUM;
+  datadog?.addAction?.(ROUTING_EVENT_NAME, event);
+};
+
+const tryFetchRoutes = async (input: RoutingRequest, attempt: number): Promise<Route[]> => {
+  const url = getRoutingUrl();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), ROUTING_TIMEOUT_MS);
+  const startedAt = Date.now();
+  let requestId: string | null = null;
 
   try {
-    const response = await fetch(`${runtimeConfig.routingBaseUrl}/routes`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(input),
       signal: controller.signal,
     });
 
-    const requestId = response.headers.get('x-request-id');
+    requestId = response.headers.get('x-request-id');
     if (requestId) {
       console.info(`[routing] x-request-id=${requestId}`);
     }
@@ -118,11 +179,38 @@ const tryFetchRoutes = async (input: RoutingRequest): Promise<Route[]> => {
       throw new RoutingParseError(requestId);
     }
 
+    reportRoutingEvent({
+      url,
+      latencyMs: Date.now() - startedAt,
+      status: response.status,
+      errorType: null,
+      requestId,
+      attempt,
+    });
+
     return routes as Route[];
   } catch (error) {
     if (isAbortError(error) && controller.signal.aborted) {
-      throw new RoutingTimeoutError(ROUTING_TIMEOUT_MS);
+      const timeoutError = new RoutingTimeoutError(ROUTING_TIMEOUT_MS, requestId);
+      reportRoutingEvent({
+        url,
+        latencyMs: Date.now() - startedAt,
+        status: null,
+        errorType: 'TIMEOUT',
+        requestId,
+        attempt,
+      });
+      throw timeoutError;
     }
+
+    reportRoutingEvent({
+      url,
+      latencyMs: Date.now() - startedAt,
+      status: error instanceof RoutingHttpError ? error.status : null,
+      errorType: getRoutingErrorType(error),
+      requestId: error instanceof RoutingHttpError || error instanceof RoutingParseError || error instanceof RoutingTimeoutError ? error.requestId : requestId,
+      attempt,
+    });
 
     throw error;
   } finally {
@@ -130,12 +218,18 @@ const tryFetchRoutes = async (input: RoutingRequest): Promise<Route[]> => {
   }
 };
 
+const getRetryDelayMs = (attempt: number): number => {
+  const exponentialDelay = RETRY_BASE_DELAY_MS * 2 ** attempt;
+  const jitter = Math.random() * exponentialDelay;
+  return Math.floor(exponentialDelay + jitter);
+};
+
 export const fetchRoutes = async (input: RoutingRequest): Promise<Route[]> => {
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     try {
-      return await tryFetchRoutes(input);
+      return await tryFetchRoutes(input, attempt + 1);
     } catch (error) {
       lastError = error;
 
@@ -143,7 +237,7 @@ export const fetchRoutes = async (input: RoutingRequest): Promise<Route[]> => {
         throw error;
       }
 
-      const retryDelay = RETRY_BASE_DELAY_MS * 2 ** attempt;
+      const retryDelay = getRetryDelayMs(attempt);
       console.warn(
         `[routing] transient error, retrying in ${retryDelay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`,
         error,
