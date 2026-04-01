@@ -51,6 +51,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Validate mobile runtime env (production)
+        env:
+          MOBILE_ENV_MODE: production
+        run: npm run check:mobile-env
+
       - name: Prebuild Android
         working-directory: apps/mobile
         run: npx expo prebuild --platform android --clean --non-interactive

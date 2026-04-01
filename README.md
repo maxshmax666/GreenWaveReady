@@ -39,6 +39,21 @@ npm run typecheck
 npm run lint
 ```
 
+## Mobile env matrix (dev / stage / prod)
+
+| Variable | Development | Stage | Production | Notes |
+| --- | --- | --- | --- | --- |
+| `EXPO_PUBLIC_ROUTING_BASE_URL` | Optional (`http://localhost:3000` fallback only in `NODE_ENV=development`) | **Required**, HTTPS, non-localhost/non-private IP | **Required**, HTTPS, non-localhost/non-private IP | Used by mobile routing client and validated at startup/CI. |
+| `EXPO_PUBLIC_MAP_STYLE_URL` | Optional (`https://demotiles.maplibre.org/style.json` fallback only in `NODE_ENV=development`) | **Required**, HTTPS, non-localhost/non-private IP | **Required**, HTTPS, non-localhost/non-private IP | Style URL for MapLibre map. |
+| `EXPO_PUBLIC_MAP_TILE_ENDPOINT` | Optional (`https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf` fallback) | Optional, if set must be HTTPS and public | Optional, if set must be HTTPS and public | Endpoint for vector tiles. |
+
+### Release notes (env hardening)
+
+- Production mobile builds now fail fast when `EXPO_PUBLIC_ROUTING_BASE_URL` or `EXPO_PUBLIC_MAP_STYLE_URL` are missing.
+- Runtime config rejects localhost/private URLs and non-HTTPS URLs outside development.
+- CI runs a prebuild env validation (`npm run check:mobile-env`) before Android release prebuild.
+- Startup logs include only URL hosts (no query string/tokens).
+
 ## Run
 
 ### API
