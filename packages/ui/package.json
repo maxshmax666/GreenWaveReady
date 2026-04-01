@@ -6,7 +6,7 @@
   "types": "src/index.tsx",
   "peerDependencies": {
     "react": "19.0.0",
-    "react-native": "0.79.2"
+    "react-native": "0.79.6"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
