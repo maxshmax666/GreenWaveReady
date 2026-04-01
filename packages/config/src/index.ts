@@ -4,18 +4,23 @@ const DEFAULT_MAP_TILE_ENDPOINT =
 
 type EnvMap = Record<string, string | undefined>;
 
-const env: EnvMap =
+type ValidationErrorKind =
+  | 'missing_env'
+  | 'invalid_url'
+  | 'non_https_in_production'
+  | 'localhost_in_production'
+  | 'private_ip_in_production';
+
+const getProcessEnv = (): EnvMap =>
   typeof globalThis !== 'undefined' &&
   'process' in globalThis &&
   typeof (globalThis as { process?: { env?: EnvMap } }).process?.env === 'object'
-    ? (globalThis as { process?: { env?: EnvMap } }).process?.env ?? {}
+    ? ((globalThis as { process?: { env?: EnvMap } }).process?.env ?? {})
     : {};
 
-const nodeEnv = env.NODE_ENV ?? 'development';
-const isDevelopment = nodeEnv === 'development';
-const isProduction = nodeEnv === 'production';
+const getNodeEnv = (env: EnvMap): string => env.NODE_ENV ?? 'development';
 
-const getEnvValue = (...keys: string[]): string | undefined => {
+const getEnvValue = (env: EnvMap, ...keys: string[]): string | undefined => {
   for (const key of keys) {
     const value = env[key];
     if (typeof value === 'string' && value.trim().length > 0) {
@@ -62,65 +67,116 @@ const isPrivateIp = (hostname: string): boolean => {
   );
 };
 
-const parseRequiredUrl = (value: string, envNames: string[]): string => {
+const formatValidationError = (params: {
+  kind: ValidationErrorKind;
+  envNames: string[];
+  nodeEnv: string;
+  host?: string;
+}): string => {
+  const hostPart = params.host ? ` host=${params.host}` : '';
+  return `[config] validation_error type=${params.kind} env=${params.envNames.join(' | ')} nodeEnv=${params.nodeEnv}${hostPart}`;
+};
+
+const parseRequiredUrl = (params: {
+  value: string;
+  envNames: string[];
+  nodeEnv: string;
+}): string => {
   let parsed: URL;
 
   try {
-    parsed = new URL(value);
+    parsed = new URL(params.value);
   } catch {
     throw new Error(
-      `[config] ${envNames.join(' / ')} must be a valid absolute URL. Received: ${value}`,
+      formatValidationError({
+        kind: 'invalid_url',
+        envNames: params.envNames,
+        nodeEnv: params.nodeEnv,
+      }),
     );
   }
 
-  if (!isDevelopment) {
+  if (params.nodeEnv !== 'development') {
     if (parsed.protocol !== 'https:') {
       throw new Error(
-        `[config] ${envNames.join(' / ')} must use HTTPS when NODE_ENV=${nodeEnv}. Received: ${value}`,
+        formatValidationError({
+          kind: 'non_https_in_production',
+          envNames: params.envNames,
+          nodeEnv: params.nodeEnv,
+          host: parsed.host,
+        }),
       );
     }
 
     const hostname = parsed.hostname.toLowerCase();
     if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
       throw new Error(
-        `[config] ${envNames.join(' / ')} must not use localhost when NODE_ENV=${nodeEnv}. Received: ${value}`,
+        formatValidationError({
+          kind: 'localhost_in_production',
+          envNames: params.envNames,
+          nodeEnv: params.nodeEnv,
+          host: parsed.host,
+        }),
       );
     }
 
     if (isPrivateIp(hostname)) {
       throw new Error(
-        `[config] ${envNames.join(' / ')} must not use private/loopback IPs when NODE_ENV=${nodeEnv}. Received: ${value}`,
+        formatValidationError({
+          kind: 'private_ip_in_production',
+          envNames: params.envNames,
+          nodeEnv: params.nodeEnv,
+          host: parsed.host,
+        }),
       );
     }
   }
 
-  return value;
+  return params.value;
 };
 
 const parseRuntimeUrl = (params: {
+  env: EnvMap;
   envNames: string[];
   fallback: string | undefined;
+  nodeEnv: string;
   requiredInProduction?: boolean;
 }): string => {
-  const configured = getEnvValue(...params.envNames);
+  const configured = getEnvValue(params.env, ...params.envNames);
 
   if (!configured) {
-    if (params.requiredInProduction && isProduction) {
+    if (params.requiredInProduction && params.nodeEnv === 'production') {
       throw new Error(
-        `[config] Missing required env for production: ${params.envNames.join(' or ')}. NODE_ENV=${nodeEnv}`,
+        formatValidationError({
+          kind: 'missing_env',
+          envNames: params.envNames,
+          nodeEnv: params.nodeEnv,
+        }),
       );
     }
 
     if (params.fallback) {
-      return parseRequiredUrl(params.fallback, params.envNames);
+      return parseRequiredUrl({
+        value: params.fallback,
+        envNames: params.envNames,
+        nodeEnv: params.nodeEnv,
+      });
     }
 
     throw new Error(
-      `[config] Missing required env: ${params.envNames.join(' or ')}. NODE_ENV=${nodeEnv}`,
+      formatValidationError({
+        kind: 'missing_env',
+        envNames: params.envNames,
+        nodeEnv: params.nodeEnv,
+      }),
     );
   }
 
-  return parseRequiredUrl(configured, params.envNames);
+  return parseRequiredUrl({
+    value: configured,
+    envNames: params.envNames,
+    nodeEnv: params.nodeEnv,
+  });
 };
 
 export type RuntimeConfig = {
@@ -130,20 +186,64 @@ export type RuntimeConfig = {
   mockMode: boolean;
 };
 
-export const runtimeConfig: RuntimeConfig = {
-  routingBaseUrl: parseRuntimeUrl({
-    envNames: ['EXPO_PUBLIC_ROUTING_BASE_URL', 'ROUTING_BASE_URL'],
-    fallback: isDevelopment ? 'http://localhost:3000' : undefined,
-    requiredInProduction: true,
-  }),
-  mapStyleUrl: parseRuntimeUrl({
-    envNames: ['EXPO_PUBLIC_MAP_STYLE_URL', 'MAP_STYLE_URL'],
-    fallback: isDevelopment ? DEFAULT_MAP_STYLE_URL : undefined,
-    requiredInProduction: true,
-  }),
-  mapTileEndpoint: parseRuntimeUrl({
-    envNames: ['EXPO_PUBLIC_MAP_TILE_ENDPOINT', 'MAP_TILE_ENDPOINT'],
-    fallback: DEFAULT_MAP_TILE_ENDPOINT,
-  }),
-  mockMode: env.MOCK_MODE === 'true',
+export const getRuntimeConfigSafe =
+  (): { ok: true; config: RuntimeConfig } | { ok: false; error: string } => {
+    const env = getProcessEnv();
+    const nodeEnv = getNodeEnv(env);
+
+    try {
+      return {
+        ok: true,
+        config: {
+          routingBaseUrl: parseRuntimeUrl({
+            env,
+            envNames: ['EXPO_PUBLIC_ROUTING_BASE_URL', 'ROUTING_BASE_URL'],
+            fallback: nodeEnv === 'development' ? 'http://localhost:3000' : undefined,
+            nodeEnv,
+            requiredInProduction: true,
+          }),
+          mapStyleUrl: parseRuntimeUrl({
+            env,
+            envNames: ['EXPO_PUBLIC_MAP_STYLE_URL', 'MAP_STYLE_URL'],
+            fallback: nodeEnv === 'development' ? DEFAULT_MAP_STYLE_URL : undefined,
+            nodeEnv,
+            requiredInProduction: true,
+          }),
+          mapTileEndpoint: parseRuntimeUrl({
+            env,
+            envNames: ['EXPO_PUBLIC_MAP_TILE_ENDPOINT', 'MAP_TILE_ENDPOINT'],
+            fallback: DEFAULT_MAP_TILE_ENDPOINT,
+            nodeEnv,
+          }),
+          mockMode: env.MOCK_MODE === 'true',
+        },
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : '[config] validation_error type=unknown',
+      };
+    }
+  };
+
+export const getRuntimeConfig = (): RuntimeConfig => {
+  const result = getRuntimeConfigSafe();
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
+
+  return result.config;
 };
+
+const runtimeConfigResult = getRuntimeConfigSafe();
+
+export const runtimeConfig: RuntimeConfig = runtimeConfigResult.ok
+  ? runtimeConfigResult.config
+  : {
+      routingBaseUrl: 'http://localhost:3000',
+      mapStyleUrl: DEFAULT_MAP_STYLE_URL,
+      mapTileEndpoint: DEFAULT_MAP_TILE_ENDPOINT,
+      mockMode: false,
+    };
+
+export const runtimeConfigInitError: string | null = runtimeConfigResult.ok ? null : runtimeConfigResult.error;
