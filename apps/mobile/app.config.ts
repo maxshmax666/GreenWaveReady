@@ -1,11 +1,28 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+const readEnv = (...keys: string[]): string | undefined => {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'GreenWave Mobile',
   slug: 'greenwave-mobile',
   scheme: 'greenwave',
   version: '0.1.0',
+  extra: {
+    ...(config.extra ?? {}),
+    routingBaseUrl: readEnv('EXPO_PUBLIC_ROUTING_BASE_URL', 'ROUTING_BASE_URL'),
+    mapStyleUrl: readEnv('EXPO_PUBLIC_MAP_STYLE_URL', 'MAP_STYLE_URL'),
+    mapTileEndpoint: readEnv('EXPO_PUBLIC_MAP_TILE_ENDPOINT', 'MAP_TILE_ENDPOINT'),
+  },
   plugins: [...(config.plugins ?? []), '@maplibre/maplibre-react-native'],
   android: {
     ...config.android,
