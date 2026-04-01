@@ -50,8 +50,6 @@ export const MapLibreMapView = ({
   const [mapRenderEpoch, setMapRenderEpoch] = useState(0);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  const isNavigationReady = Boolean(pipeline || vehicle);
-
   const routeCoordinates = useMemo(
     () => route?.geometry.map(toLngLat) ?? [],
     [route],
@@ -219,26 +217,6 @@ export const MapLibreMapView = ({
   const centerCoordinate: [number, number] = resolvedVehicle
     ? [resolvedVehicle.coordinate.lng, resolvedVehicle.coordinate.lat]
     : (routeCoordinates[0] ?? [37.617, 55.751]);
-
-  if (!isNavigationReady) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          borderRadius: 16,
-          overflow: 'hidden',
-          borderWidth: 1,
-          borderColor: '#1D2A46',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#0B101D',
-          padding: 16,
-        }}
-      >
-        <Text style={{ color: '#D5DEEF' }}>Waiting for navigation state…</Text>
-      </View>
-    );
-  }
 
   return (
     <View
