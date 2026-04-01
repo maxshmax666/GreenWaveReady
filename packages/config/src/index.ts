@@ -1,32 +1,58 @@
-const DEFAULT_ROUTING_BASE_URL = 'http://localhost:3000';
 const DEFAULT_MAP_STYLE_URL = 'https://demotiles.maplibre.org/style.json';
 const DEFAULT_MAP_TILE_ENDPOINT =
   'https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf';
 
-const env =
+type EnvMap = Record<string, string | undefined>;
+
+const env: EnvMap =
   typeof globalThis !== 'undefined' &&
   'process' in globalThis &&
-  typeof (globalThis as { process?: { env?: Record<string, string | undefined> } })
-    .process?.env === 'object'
-    ? (globalThis as { process?: { env?: Record<string, string | undefined> } })
-        .process?.env ?? {}
+  typeof (globalThis as { process?: { env?: EnvMap } }).process?.env === 'object'
+    ? (globalThis as { process?: { env?: EnvMap } }).process?.env ?? {}
     : {};
 
-const parseRequiredUrl = (
-  value: string | undefined,
-  fallback: string,
-  envName: string,
-): string => {
-  const candidate = value ?? fallback;
+const nodeEnv = env.NODE_ENV ?? 'development';
+const isDevelopment = nodeEnv === 'development';
 
+const getEnvValue = (...keys: string[]): string | undefined => {
+  for (const key of keys) {
+    const value = env[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const parseRequiredUrl = (value: string, envNames: string[]): string => {
   try {
-    new URL(candidate);
-    return candidate;
+    new URL(value);
+    return value;
   } catch {
     throw new Error(
-      `[config] ${envName} must be a valid absolute URL. Received: ${candidate}`,
+      `[config] ${envNames.join(' / ')} must be a valid absolute URL. Received: ${value}`,
     );
   }
+};
+
+const parseRuntimeUrl = (params: {
+  envNames: string[];
+  fallback: string | undefined;
+}): string => {
+  const configured = getEnvValue(...params.envNames);
+
+  if (!configured) {
+    if (params.fallback) {
+      return parseRequiredUrl(params.fallback, params.envNames);
+    }
+
+    throw new Error(
+      `[config] Missing required env: ${params.envNames.join(' or ')}. NODE_ENV=${nodeEnv}`,
+    );
+  }
+
+  return parseRequiredUrl(configured, params.envNames);
 };
 
 export type RuntimeConfig = {
@@ -37,20 +63,17 @@ export type RuntimeConfig = {
 };
 
 export const runtimeConfig: RuntimeConfig = {
-  routingBaseUrl: parseRequiredUrl(
-    env.ROUTING_BASE_URL,
-    DEFAULT_ROUTING_BASE_URL,
-    'ROUTING_BASE_URL',
-  ),
-  mapStyleUrl: parseRequiredUrl(
-    env.MAP_STYLE_URL,
-    DEFAULT_MAP_STYLE_URL,
-    'MAP_STYLE_URL',
-  ),
-  mapTileEndpoint: parseRequiredUrl(
-    env.MAP_TILE_ENDPOINT,
-    DEFAULT_MAP_TILE_ENDPOINT,
-    'MAP_TILE_ENDPOINT',
-  ),
+  routingBaseUrl: parseRuntimeUrl({
+    envNames: ['EXPO_PUBLIC_ROUTING_BASE_URL', 'ROUTING_BASE_URL'],
+    fallback: isDevelopment ? 'http://localhost:3000' : undefined,
+  }),
+  mapStyleUrl: parseRuntimeUrl({
+    envNames: ['EXPO_PUBLIC_MAP_STYLE_URL', 'MAP_STYLE_URL'],
+    fallback: DEFAULT_MAP_STYLE_URL,
+  }),
+  mapTileEndpoint: parseRuntimeUrl({
+    envNames: ['EXPO_PUBLIC_MAP_TILE_ENDPOINT', 'MAP_TILE_ENDPOINT'],
+    fallback: DEFAULT_MAP_TILE_ENDPOINT,
+  }),
   mockMode: env.MOCK_MODE === 'true',
 };

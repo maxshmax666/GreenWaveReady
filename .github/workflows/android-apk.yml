@@ -22,6 +22,9 @@ jobs:
 
     env:
       CI: "1"
+      EXPO_PUBLIC_ROUTING_BASE_URL: ${{ secrets.EXPO_PUBLIC_ROUTING_BASE_URL }}
+      EXPO_PUBLIC_MAP_STYLE_URL: ${{ secrets.EXPO_PUBLIC_MAP_STYLE_URL }}
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: ${{ secrets.EXPO_PUBLIC_MAP_TILE_ENDPOINT }}
 
     steps:
       - name: Checkout
