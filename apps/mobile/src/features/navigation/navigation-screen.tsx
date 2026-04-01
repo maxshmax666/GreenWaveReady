@@ -153,38 +153,35 @@ export const NavigationScreen = (): React.JSX.Element => {
             : 'Next: Continue straight'}
         </Text>
         <Text style={{ color: '#8D95A8' }}>{statusText}</Text>
-        {(routeUiState === 'degraded' || routeUiState === 'failed') && (
-          <>
-            <Text style={{ color: '#8D95A8', marginTop: 6 }}>
-              {errorDetails}
-            </Text>
-            <View style={{ marginTop: 8 }}>
-              <ActionButton
-                title="Retry"
-                onPress={() => void retryRouteFetch()}
-              />
-            </View>
-          </>
-        )}
       </GlassPanel>
 
+      {(routeUiState === 'degraded' || routeUiState === 'failed') && (
+        <GlassPanel style={{ marginBottom: 10 }}>
+          <Text style={{ color: '#F4F7FF', fontSize: 16, fontWeight: '700' }}>
+            Маршрут недоступен
+          </Text>
+          <Text style={{ color: '#8D95A8', marginTop: 6 }}>
+            Техническая причина: {errorDetails}
+          </Text>
+          <View style={{ marginTop: 8 }}>
+            <ActionButton title="Retry" onPress={() => void retryRouteFetch()} />
+          </View>
+        </GlassPanel>
+      )}
+
       <View style={{ flex: 1 }}>
-        {pipeline ? (
-          <MapLibreMapView
-            route={mapRoute}
-            vehicle={mapVehicle}
-            pipeline={pipeline}
-            cameraMode={mapCameraMode}
-            showGreenWaveOverlay
-            routeProgress={progress}
-            showRouteLine={showRouteLine}
-            showPassedRoute={showPassedRoute}
-            showThreeWorld={showThreeWorld}
-            qualityMode={objectDensity}
-          />
-        ) : (
-          <LoadingState />
-        )}
+        <MapLibreMapView
+          route={mapRoute}
+          vehicle={mapVehicle}
+          pipeline={pipeline}
+          cameraMode={mapCameraMode}
+          showGreenWaveOverlay
+          routeProgress={progress}
+          showRouteLine={showRouteLine}
+          showPassedRoute={showPassedRoute}
+          showThreeWorld={showThreeWorld}
+          qualityMode={objectDensity}
+        />
         <DebugHud />
       </View>
 
@@ -234,10 +231,4 @@ const ActionButton = ({
       {title}
     </Text>
   </TouchableOpacity>
-);
-
-const LoadingState = (): React.JSX.Element => (
-  <GlassPanel style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-    <Text style={{ color: '#8D95A8' }}>Подготавливаем позиционирование…</Text>
-  </GlassPanel>
 );

@@ -66,6 +66,8 @@ const isTransientRoutingError = (error: unknown): boolean => {
 const wait = async (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+const ERROR_BODY_LOG_LIMIT = 2_000;
+
 const tryFetchRoutes = async (input: RoutingRequest): Promise<Route[]> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), ROUTING_TIMEOUT_MS);
@@ -84,6 +86,23 @@ const tryFetchRoutes = async (input: RoutingRequest): Promise<Route[]> => {
     }
 
     if (!response.ok) {
+      if (response.status >= 400) {
+        let errorBody = '<unavailable>';
+        try {
+          const rawBody = await response.text();
+          errorBody = rawBody.length > 0 ? rawBody : '<empty>';
+        } catch {
+          errorBody = '<failed-to-read>';
+        }
+
+        const normalizedBody =
+          errorBody.length > ERROR_BODY_LOG_LIMIT
+            ? `${errorBody.slice(0, ERROR_BODY_LOG_LIMIT)}…<truncated>`
+            : errorBody;
+        console.error(
+          `[routing] request failed status=${response.status} request-id=${requestId ?? '<none>'} body=${normalizedBody}`,
+        );
+      }
       throw new RoutingHttpError(response.status, requestId);
     }
 
