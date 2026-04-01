@@ -10,7 +10,7 @@ export type RouteSlice = {
 
 export type VehicleSlice = {
   vehicleState?: VehicleState;
-  deviceLocation?: VehicleState;
+  deviceLocation: VehicleState | undefined;
   setVehicleState: (state: VehicleState) => void;
   setDeviceLocation: (state: VehicleState | undefined) => void;
 };
