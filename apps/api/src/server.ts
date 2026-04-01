@@ -56,6 +56,7 @@ const bootstrap = async (): Promise<void> => {
   await app.register(cors, { origin: true });
 
   app.addHook('onRequest', async (request, reply) => {
+    reply.header('x-request-id', request.id);
     const bucket = applyIpRateLimit(request.ip);
     reply.header('x-ratelimit-limit', RATE_LIMIT_MAX_REQUESTS);
     reply.header('x-ratelimit-remaining', Math.max(RATE_LIMIT_MAX_REQUESTS - bucket.count, 0));
@@ -65,9 +66,32 @@ const bootstrap = async (): Promise<void> => {
       return reply.status(429).send({
         error: 'Too Many Requests',
         statusCode: 429,
+        requestId: request.id,
         retryAfterSeconds: Math.max(Math.ceil((bucket.resetAt - Date.now()) / 1000), 1),
       });
     }
+  });
+
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (!reply.hasHeader('x-request-id')) {
+      reply.header('x-request-id', request.id);
+    }
+    return payload;
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    const normalizedError = error as { message?: string; statusCode?: number };
+    const statusCode = normalizedError.statusCode ?? 500;
+    const message = normalizedError.message ?? 'Internal Server Error';
+    request.log.error(
+      { err: error, requestId: request.id, route: request.url, method: request.method },
+      'Unhandled API error',
+    );
+    void reply.status(statusCode).send({
+      error: message,
+      statusCode,
+      requestId: request.id,
+    });
   });
 
   const routingProvider = new MockRoutingProvider();

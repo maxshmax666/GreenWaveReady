@@ -16,6 +16,7 @@ import { buildPositionPipeline } from '@greenwave/navigation-core';
 import {
   fetchRoutes,
   RoutingHttpError,
+  RoutingParseError,
   RoutingTimeoutError,
 } from '../../services/routing-client';
 import { nextVehicleState } from '../../simulation/simulator';
@@ -28,6 +29,27 @@ const UI_METRICS_UPDATE_INTERVAL_MS = 1_000;
 const LOW_GPS_ACCURACY_METERS = 25;
 
 type GpsUiState = 'searching' | 'low accuracy' | 'locked';
+
+const getRoutingErrorBadge = (error: Error): { code: string; requestId: string } => {
+  if (error instanceof RoutingTimeoutError) {
+    return { code: 'TIMEOUT', requestId: error.requestId ?? 'n/a' };
+  }
+
+  if (error instanceof RoutingParseError) {
+    return { code: 'PARSE', requestId: error.requestId ?? 'n/a' };
+  }
+
+  if (error instanceof RoutingHttpError) {
+    const code = error.status >= 500 ? 'HTTP_5XX' : `HTTP_${error.status}`;
+    return { code, requestId: error.requestId ?? 'n/a' };
+  }
+
+  if (error instanceof TypeError) {
+    return { code: 'NETWORK', requestId: 'n/a' };
+  }
+
+  return { code: 'UNKNOWN', requestId: 'n/a' };
+};
 
 export const NavigationScreen = (): React.JSX.Element => {
   const { activeRoute, setRoute } = useNavigationStore(
@@ -211,11 +233,12 @@ export const NavigationScreen = (): React.JSX.Element => {
     gpsState === 'searching'
       ? 'GPS: searching'
       : gpsState === 'low accuracy'
-        ? `GPS: low accuracy (${Math.round(deviceLocation.accuracyMeters)}m)`
-        : `GPS: locked (${Math.round(deviceLocation.accuracyMeters)}m)`;
+        ? `GPS: low accuracy (${Math.round(deviceLocation?.accuracyMeters ?? 0)}m)`
+        : `GPS: locked (${Math.round(deviceLocation?.accuracyMeters ?? 0)}m)`;
 
   const errorDetails =
     isError && error instanceof Error ? error.message : 'Unknown routing error';
+  const errorBadge = isError && error instanceof Error ? getRoutingErrorBadge(error) : null;
   const pipeline = pipelineRef.current;
 
   return (
@@ -240,6 +263,11 @@ export const NavigationScreen = (): React.JSX.Element => {
           <Text style={{ color: '#8D95A8', marginTop: 6 }}>
             Техническая причина: {errorDetails}
           </Text>
+          {errorBadge && (
+            <Text style={{ color: '#F4F7FF', marginTop: 6, fontWeight: '600' }}>
+              Код: {errorBadge.code} · request-id: {errorBadge.requestId}
+            </Text>
+          )}
           <View style={{ marginTop: 8 }}>
             <ActionButton title="Retry" onPress={() => void retryRouteFetch()} />
           </View>
