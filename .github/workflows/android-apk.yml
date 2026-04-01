@@ -22,9 +22,9 @@ jobs:
 
     env:
       CI: "1"
-      EXPO_PUBLIC_ROUTING_BASE_URL: ${{ secrets.EXPO_PUBLIC_ROUTING_BASE_URL }}
-      EXPO_PUBLIC_MAP_STYLE_URL: ${{ secrets.EXPO_PUBLIC_MAP_STYLE_URL }}
-      EXPO_PUBLIC_MAP_TILE_ENDPOINT: ${{ secrets.EXPO_PUBLIC_MAP_TILE_ENDPOINT }}
+      EXPO_PUBLIC_ROUTING_BASE_URL: ${{ secrets.EXPO_PUBLIC_ROUTING_BASE_URL || vars.EXPO_PUBLIC_ROUTING_BASE_URL }}
+      EXPO_PUBLIC_MAP_STYLE_URL: ${{ secrets.EXPO_PUBLIC_MAP_STYLE_URL || vars.EXPO_PUBLIC_MAP_STYLE_URL }}
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: ${{ secrets.EXPO_PUBLIC_MAP_TILE_ENDPOINT || vars.EXPO_PUBLIC_MAP_TILE_ENDPOINT }}
 
     steps:
       - name: Checkout
@@ -64,7 +64,7 @@ jobs:
 
           if [[ ${#missing[@]} -gt 0 ]]; then
             printf '%s\n' "[release-env] Missing required env var(s): ${missing[*]}"
-            printf '%s\n' "[release-env] Configure them in GitHub Actions secrets (or build profile env) before running release."
+            printf '%s\n' "[release-env] Configure them in GitHub Actions Secrets or Variables (or build profile env) before running release."
             exit 1
           fi
 
