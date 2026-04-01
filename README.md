@@ -51,8 +51,23 @@ npm run lint
 
 - Production mobile builds now fail fast when `EXPO_PUBLIC_ROUTING_BASE_URL` or `EXPO_PUBLIC_MAP_STYLE_URL` are missing.
 - Runtime config rejects localhost/private URLs and non-HTTPS URLs outside development.
-- CI runs a prebuild env validation (`npm run check:mobile-env`) before Android release prebuild.
+- CI runs `node scripts/validate-mobile-env.mjs` with `MOBILE_ENV_MODE=production` before Android release prebuild.
 - Startup logs include only URL hosts (no query string/tokens).
+
+### Production env example (CI / EAS)
+
+```bash
+export MOBILE_ENV_MODE=production
+export EXPO_PUBLIC_ROUTING_BASE_URL="https://routing.example.com"
+export EXPO_PUBLIC_MAP_STYLE_URL="https://maps.example.com/styles/greenwave.json"
+# optional:
+export EXPO_PUBLIC_MAP_TILE_ENDPOINT="https://tiles.example.com/tiles/{z}/{x}/{y}.pbf"
+
+# fail-fast validation before prebuild/eas build
+node scripts/validate-mobile-env.mjs
+```
+
+`apps/mobile/eas.json` includes the same production variable set as an explicit build-profile example.
 
 ## Run
 
