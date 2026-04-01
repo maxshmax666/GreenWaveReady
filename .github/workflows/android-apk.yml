@@ -62,7 +62,7 @@ jobs:
 
       - name: Build release APK
         working-directory: apps/mobile/android
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Show release outputs
         run: |
@@ -72,7 +72,7 @@ jobs:
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: greenwave-debug-apk
+          name: greenwave-release-apk
           path: |
-            apps/mobile/android/app/build/outputs/apk/debug/*.apk
+            apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
