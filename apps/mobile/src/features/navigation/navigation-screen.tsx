@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import * as Location from 'expo-location';
 import { GlassPanel, MetricText } from '@greenwave/ui';
 import { MapLibreMapView } from '../map/maplibre-map-view';
 import { useNavigationStore } from '../../state/navigation-store';
@@ -24,12 +25,21 @@ import { useShallow } from 'zustand/react/shallow';
 const RETRYABLE_HTTP_STATUS = new Set([429, 500, 502, 503, 504]);
 const VEHICLE_RAW_UPDATE_INTERVAL_MS = 100;
 const UI_METRICS_UPDATE_INTERVAL_MS = 1_000;
+const LOW_GPS_ACCURACY_METERS = 25;
+
+type GpsUiState = 'searching' | 'low accuracy' | 'locked';
 
 export const NavigationScreen = (): React.JSX.Element => {
   const { activeRoute, setRoute } = useNavigationStore(
     useShallow(selectRouteState),
   );
-  const { simulationEnabled, vehicleState, setVehicleState } =
+  const {
+    simulationEnabled,
+    vehicleState,
+    deviceLocation,
+    setVehicleState,
+    setDeviceLocation,
+  } =
     useNavigationStore(useShallow(selectSimulationState));
   const { cameraMode, setCameraMode, toggleSimulation } = useNavigationStore(
     useShallow(selectControlsState),
@@ -37,6 +47,7 @@ export const NavigationScreen = (): React.JSX.Element => {
   const {
     activeRoute: mapRoute,
     vehicleState: mapVehicle,
+    deviceLocation: mapDeviceLocation,
     cameraMode: mapCameraMode,
     showRouteLine,
     showPassedRoute,
@@ -50,6 +61,59 @@ export const NavigationScreen = (): React.JSX.Element => {
   useEffect(() => {
     vehicleStateRef.current = vehicleState;
   }, [vehicleState]);
+
+  useEffect(() => {
+    let isMounted = true;
+    let subscription: Location.LocationSubscription | null = null;
+
+    const startLocationWatcher = async (): Promise<void> => {
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (!isMounted || permission.status !== 'granted') {
+          if (isMounted) {
+            setDeviceLocation(undefined);
+          }
+          return;
+        }
+
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            distanceInterval: 1,
+            timeInterval: 1000,
+          },
+          (location) => {
+            if (!isMounted) {
+              return;
+            }
+
+            setDeviceLocation({
+              timestamp: new Date(location.timestamp).toISOString(),
+              coordinate: {
+                lat: location.coords.latitude,
+                lng: location.coords.longitude,
+              },
+              headingDeg: location.coords.heading ?? 0,
+              speedKph: Math.max(0, (location.coords.speed ?? 0) * 3.6),
+              accuracyMeters: location.coords.accuracy ?? 999,
+              source: 'gps',
+            });
+          },
+        );
+      } catch {
+        if (isMounted) {
+          setDeviceLocation(undefined);
+        }
+      }
+    };
+
+    void startLocationWatcher();
+
+    return () => {
+      isMounted = false;
+      subscription?.remove();
+    };
+  }, [setDeviceLocation]);
 
   const {
     data,
@@ -137,6 +201,18 @@ export const NavigationScreen = (): React.JSX.Element => {
         : routeUiState === 'failed'
           ? 'Маршрут недоступен'
           : `ETA ${Math.ceil(etaSeconds / 60)} min`;
+  const gpsState: GpsUiState = !deviceLocation
+    ? 'searching'
+    : deviceLocation.accuracyMeters > LOW_GPS_ACCURACY_METERS
+      ? 'low accuracy'
+      : 'locked';
+
+  const gpsStatusText =
+    gpsState === 'searching'
+      ? 'GPS: searching'
+      : gpsState === 'low accuracy'
+        ? `GPS: low accuracy (${Math.round(deviceLocation.accuracyMeters)}m)`
+        : `GPS: locked (${Math.round(deviceLocation.accuracyMeters)}m)`;
 
   const errorDetails =
     isError && error instanceof Error ? error.message : 'Unknown routing error';
@@ -153,6 +229,7 @@ export const NavigationScreen = (): React.JSX.Element => {
             : 'Next: Continue straight'}
         </Text>
         <Text style={{ color: '#8D95A8' }}>{statusText}</Text>
+        <Text style={{ color: '#8D95A8', marginTop: 4 }}>{gpsStatusText}</Text>
       </GlassPanel>
 
       {(routeUiState === 'degraded' || routeUiState === 'failed') && (
@@ -173,6 +250,7 @@ export const NavigationScreen = (): React.JSX.Element => {
         <MapLibreMapView
           route={mapRoute}
           vehicle={mapVehicle}
+          deviceLocation={mapDeviceLocation}
           pipeline={pipeline}
           cameraMode={mapCameraMode}
           showGreenWaveOverlay

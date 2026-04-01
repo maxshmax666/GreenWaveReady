@@ -5,6 +5,7 @@ import type { QualityMode } from '@greenwave/three-world';
 export type MapAdapterProps = {
   route: Route | undefined;
   vehicle: VehicleState | undefined;
+  deviceLocation: VehicleState | undefined;
   pipeline: PositionPipelineState | undefined;
   cameraMode: 'follow' | 'overview';
   showGreenWaveOverlay: boolean;
