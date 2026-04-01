@@ -40,6 +40,12 @@ export class RoutingParseError extends Error {
 const isRetryableHttpStatus = (status: number): boolean =>
   status === 429 || (status >= 500 && status <= 599);
 
+const isAbortError = (error: unknown): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  'name' in error &&
+  (error as { name?: string }).name === 'AbortError';
+
 const isTransientRoutingError = (error: unknown): boolean => {
   if (error instanceof RoutingTimeoutError) {
     return true;
@@ -50,6 +56,7 @@ const isTransientRoutingError = (error: unknown): boolean => {
   }
 
   if (error instanceof TypeError) {
+    // RN/fetch network layer failures are often surfaced as TypeError and should be retried.
     return true;
   }
 
@@ -94,11 +101,7 @@ const tryFetchRoutes = async (input: RoutingRequest): Promise<Route[]> => {
 
     return routes as Route[];
   } catch (error) {
-    if (
-      error instanceof DOMException &&
-      error.name === 'AbortError' &&
-      controller.signal.aborted
-    ) {
+    if (isAbortError(error) && controller.signal.aborted) {
       throw new RoutingTimeoutError(ROUTING_TIMEOUT_MS);
     }
 
