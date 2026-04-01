@@ -9,8 +9,11 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  build-debug-apk:
+  build-release-apk:
     runs-on: ubuntu-24.04
 
     defaults:
@@ -27,7 +30,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20.20.1
+          node-version: 22
           cache: npm
 
       - name: Setup Java
@@ -43,19 +46,25 @@ jobs:
           java -version
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Prebuild Android
         working-directory: apps/mobile
         run: npx expo prebuild --platform android --clean --non-interactive
 
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: apps/mobile/android
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleRelease --stacktrace
 
-      - name: Upload APK artifact
+      - name: Show release outputs
+        run: |
+          ls -lah apps/mobile/android/app/build/outputs/apk/release || true
+          find apps/mobile/android/app/build/outputs -maxdepth 4 -type f | sort
+
+      - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: greenwave-debug-apk
-          path: apps/mobile/android/app/build/outputs/apk/debug/*.apk
+          name: greenwave-release-apk
+          path: |
+            apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
