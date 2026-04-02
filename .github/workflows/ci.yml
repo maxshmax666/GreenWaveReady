@@ -22,7 +22,7 @@ jobs:
         env:
           MOBILE_ENV_MODE: production
           EXPO_PUBLIC_ROUTING_BASE_URL: https://routing.example.com
-          EXPO_PUBLIC_MAP_STYLE_URL: https://maps.example.com/style.json
+          EXPO_PUBLIC_MAP_STYLE_URL: https://demotiles.maplibre.org/style.json
           EXPO_PUBLIC_MAP_TILE_ENDPOINT: https://maps.example.com/tiles/{z}/{x}/{y}.pbf
         run: npm run check:mobile-env
       - name: Lint

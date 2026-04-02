@@ -19,6 +19,19 @@ const fail = (message) => {
   process.exit(1);
 };
 
+const looksMaskedOrPlaceholder = (value) => {
+  const normalized = value.trim().toLowerCase();
+
+  if (!normalized) return true;
+  if (normalized === '***') return true;
+  if (normalized.includes('<secret>')) return true;
+  if (normalized.includes('changeme')) return true;
+  if (normalized.includes('placeholder')) return true;
+  if (normalized.includes('${{') || normalized.includes('}}')) return true;
+
+  return false;
+};
+
 const isPrivateIp = (hostname) => {
   if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
     const [a, b] = hostname.split('.').map(Number);
@@ -70,6 +83,10 @@ for (const envName of requiredVars) {
   const value = env[envName];
   if (!value || value.trim().length === 0) {
     fail(`Missing required env var ${envName} for ${mode}`);
+  }
+
+  if (!isDevelopment && looksMaskedOrPlaceholder(value)) {
+    fail(`${envName} looks like a masked/placeholder value in ${mode}. Configure a real public HTTPS URL.`);
   }
 }
 
