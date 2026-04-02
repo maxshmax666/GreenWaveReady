@@ -56,7 +56,7 @@ const getEnvValue = (env: EnvMap, ...keys: string[]): string | undefined => {
   return undefined;
 };
 
-const configOverrideStore: Partial<Record<ConfigKey, string | boolean>> = {};
+const configOverrideStore: RuntimeConfigOverride = {};
 
 const setConfigOverride = <T extends ConfigKey>(key: T, value: RuntimeConfig[T]): void => {
   setRuntimeConfigOverride({ [key]: value } as RuntimeConfigOverride);
