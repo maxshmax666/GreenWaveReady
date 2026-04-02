@@ -56,14 +56,16 @@ jobs:
           is_invalid_map_style_url() {
             local value="$1"
             local lower
+            local trimmed
 
-            lower="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+            trimmed="$(printf '%s' "$value" | sed -E "s/^[[:space:]'\"]+//; s/[[:space:]'\"]+$//")"
+            lower="$(printf '%s' "$trimmed" | tr '[:upper:]' '[:lower:]')"
 
-            [[ -z "$value" ]] && return 0
-            [[ "$value" == '***' ]] && return 0
+            [[ -z "$trimmed" ]] && return 0
+            [[ "$trimmed" =~ ^\*+$ ]] && return 0
             [[ "$lower" == *'placeholder'* ]] && return 0
             [[ "$lower" == *'changeme'* ]] && return 0
-            [[ "$value" == *'$''{{'* ]] && return 0
+            [[ "$trimmed" == *'$''{{'* ]] && return 0
 
             return 1
           }
@@ -91,11 +93,13 @@ jobs:
           looks_placeholder() {
             local value="$1"
             local normalized
+            local trimmed
 
-            normalized="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+            trimmed="$(printf '%s' "$value" | sed -E "s/^[[:space:]'\"]+//; s/[[:space:]'\"]+$//")"
+            normalized="$(printf '%s' "$trimmed" | tr '[:upper:]' '[:lower:]')"
 
             [[ -z "${normalized//[[:space:]]/}" ]] && return 0
-            [[ "$normalized" == '***' ]] && return 0
+            [[ "$normalized" =~ ^\*+$ ]] && return 0
             [[ "$normalized" == *'placeholder'* ]] && return 0
             [[ "$normalized" == *'changeme'* ]] && return 0
             [[ "$normalized" == *'$''{{'* ]] && return 0
