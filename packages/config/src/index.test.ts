@@ -1,10 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import {
-  clearRuntimeConfigOverride,
-  getRuntimeConfigOverride,
-  getRuntimeConfigSafe,
-  setRuntimeConfigOverride,
-} from './index';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const originalEnv = { ...process.env };
 
@@ -12,20 +6,90 @@ const resetEnv = (): void => {
   process.env = { ...originalEnv };
 };
 
+const loadConfigModule = async () => import('./index');
+
 afterEach(() => {
   resetEnv();
-  clearRuntimeConfigOverride();
+  vi.resetModules();
+  vi.unmock('expo-constants');
+  vi.unstubAllGlobals();
 });
 
 describe('getRuntimeConfigSafe', () => {
-  it('returns structured error when required env is missing in production', () => {
+  it('Node env path: reads EXPO_PUBLIC_* from process env and marks process_env source', async () => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'production',
+      EXPO_PUBLIC_ROUTING_BASE_URL: 'https://api.example.com',
+      EXPO_PUBLIC_MAP_STYLE_URL: 'https://maps.example.com/style.json',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: 'https://tiles.example.com/{z}/{x}/{y}.pbf',
+    };
+
+    const { clearRuntimeConfigOverride, getRuntimeConfigDiagnostics, getRuntimeConfigSafe } =
+      await loadConfigModule();
+
+    clearRuntimeConfigOverride();
+    const safe = getRuntimeConfigSafe();
+    const diagnostics = getRuntimeConfigDiagnostics();
+
+    expect(safe.ok).toBe(true);
+    expect(diagnostics.ok).toBe(true);
+    expect(diagnostics.sources.routingBaseUrl).toBe('process_env');
+    expect(diagnostics.sources.mapStyleUrl).toBe('process_env');
+    expect(diagnostics.sources.mapTileEndpoint).toBe('process_env');
+  });
+
+  it('Expo extra path: uses expoConfig.extra when env is empty', async () => {
     process.env = {
       ...originalEnv,
       NODE_ENV: 'production',
       EXPO_PUBLIC_ROUTING_BASE_URL: '',
       EXPO_PUBLIC_MAP_STYLE_URL: '',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: '',
     };
 
+    vi.stubGlobal('require', (id: string) => {
+      if (id === 'expo-constants') {
+        return {
+          default: {
+            expoConfig: {
+              extra: {
+                routingBaseUrl: 'https://expo.example.com',
+                mapStyleUrl: 'https://expo.example.com/style.json',
+                mapTileEndpoint: 'https://expo.example.com/{z}/{x}/{y}.pbf',
+              },
+            },
+          },
+        };
+      }
+      throw new Error(`Unexpected module request: ${id}`);
+    });
+
+    const { clearRuntimeConfigOverride, getRuntimeConfigDiagnostics, getRuntimeConfigSafe } =
+      await loadConfigModule();
+
+    clearRuntimeConfigOverride();
+    const safe = getRuntimeConfigSafe();
+    const diagnostics = getRuntimeConfigDiagnostics();
+
+    expect(safe.ok).toBe(true);
+    expect(diagnostics.sources.routingBaseUrl).toBe('expo_extra');
+    expect(diagnostics.sources.mapStyleUrl).toBe('expo_extra');
+    expect(diagnostics.sources.mapTileEndpoint).toBe('expo_extra');
+  });
+
+  it('missing env path: production without routing/style on all layers returns missing_env', async () => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'production',
+      EXPO_PUBLIC_ROUTING_BASE_URL: '',
+      EXPO_PUBLIC_MAP_STYLE_URL: '',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: 'https://tiles.example.com/{z}/{x}/{y}.pbf',
+    };
+
+    const { clearRuntimeConfigOverride, getRuntimeConfigSafe } = await loadConfigModule();
+
+    clearRuntimeConfigOverride();
     const result = getRuntimeConfigSafe();
 
     expect(result.ok).toBe(false);
@@ -35,104 +99,206 @@ describe('getRuntimeConfigSafe', () => {
     expect(result.error).toContain('type=missing_env');
   });
 
-  it('returns structured error for non-https URL in production', () => {
+  it('invalid URL path: malformed URL is rejected with invalid_url', async () => {
     process.env = {
       ...originalEnv,
       NODE_ENV: 'production',
-      EXPO_PUBLIC_ROUTING_BASE_URL: 'http://api.example.com',
-      EXPO_PUBLIC_MAP_STYLE_URL: 'https://maps.example.com/style.json',
+      EXPO_PUBLIC_ROUTING_BASE_URL: 'https://api.example.com',
+      EXPO_PUBLIC_MAP_STYLE_URL: 'not-a-url',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: 'https://tiles.example.com/{z}/{x}/{y}.pbf',
     };
 
+    const { clearRuntimeConfigOverride, getRuntimeConfigSafe } = await loadConfigModule();
+
+    clearRuntimeConfigOverride();
     const result = getRuntimeConfigSafe();
 
     expect(result.ok).toBe(false);
     if (result.ok) {
       throw new Error('Expected error result');
     }
-    expect(result.error).toContain('type=non_https_in_production');
-    expect(result.error).toContain('host=api.example.com');
+    expect(result.error).toContain('type=invalid_url');
+    expect(result.error).toContain('key=mapStyleUrl');
   });
 
-  it('returns structured error for localhost in production', () => {
+  it('fallback path: development with empty env/extra resolves fallback source', async () => {
     process.env = {
       ...originalEnv,
-      NODE_ENV: 'production',
-      EXPO_PUBLIC_ROUTING_BASE_URL: 'https://localhost:3000',
-      EXPO_PUBLIC_MAP_STYLE_URL: 'https://maps.example.com/style.json',
+      NODE_ENV: 'development',
+      EXPO_PUBLIC_ROUTING_BASE_URL: '',
+      EXPO_PUBLIC_MAP_STYLE_URL: '',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: '',
     };
 
-    const result = getRuntimeConfigSafe();
+    const { clearRuntimeConfigOverride, getRuntimeConfigDiagnostics, getRuntimeConfigSafe } =
+      await loadConfigModule();
 
-    expect(result.ok).toBe(false);
-    if (result.ok) {
-      throw new Error('Expected error result');
+    clearRuntimeConfigOverride();
+    const safe = getRuntimeConfigSafe();
+    const diagnostics = getRuntimeConfigDiagnostics();
+
+    expect(safe.ok).toBe(true);
+    if (!safe.ok) {
+      throw new Error('Expected success result');
     }
-    expect(result.error).toContain('type=localhost_in_production');
-    expect(result.error).toContain('host=localhost:3000');
+    expect(diagnostics.sources.routingBaseUrl).toBe('fallback');
+    expect(diagnostics.sources.mapStyleUrl).toBe('fallback');
+    expect(diagnostics.sources.mapTileEndpoint).toBe('fallback');
+    expect(safe.config.routingBaseUrl).toBe('http://localhost:3000');
+    expect(safe.config.mapStyleUrl).toBe('https://demotiles.maplibre.org/style.json');
   });
 
-  it('returns structured error for private IP in production', () => {
-    process.env = {
-      ...originalEnv,
-      NODE_ENV: 'production',
-      EXPO_PUBLIC_ROUTING_BASE_URL: 'https://10.0.0.12:8080',
-      EXPO_PUBLIC_MAP_STYLE_URL: 'https://maps.example.com/style.json',
-    };
-
-    const result = getRuntimeConfigSafe();
-
-    expect(result.ok).toBe(false);
-    if (result.ok) {
-      throw new Error('Expected error result');
-    }
-    expect(result.error).toContain('type=private_ip_in_production');
-    expect(result.error).toContain('host=10.0.0.12:8080');
-  });
-
-  it('applies runtime override as first resolver layer', () => {
+  it('hot override path: set override wins, clear restores normal source', async () => {
     process.env = {
       ...originalEnv,
       NODE_ENV: 'production',
       EXPO_PUBLIC_ROUTING_BASE_URL: 'https://api.example.com',
       EXPO_PUBLIC_MAP_STYLE_URL: 'https://maps.example.com/style.json',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: 'https://tiles.example.com/{z}/{x}/{y}.pbf',
     };
-    setRuntimeConfigOverride({
-      routingBaseUrl: 'https://override.example.com',
-      mockMode: true,
-    });
 
-    const result = getRuntimeConfigSafe();
+    const {
+      clearRuntimeConfigOverride,
+      getRuntimeConfigDiagnostics,
+      getRuntimeConfigSafe,
+      setRuntimeConfigOverride,
+    } = await loadConfigModule();
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
+    setRuntimeConfigOverride({ routingBaseUrl: 'https://override.example.com' });
+
+    const withOverride = getRuntimeConfigSafe();
+    const diagWithOverride = getRuntimeConfigDiagnostics();
+
+    expect(withOverride.ok).toBe(true);
+    if (!withOverride.ok) {
       throw new Error('Expected success result');
     }
-    expect(result.config.routingBaseUrl).toBe('https://override.example.com');
-    expect(result.config.mockMode).toBe(true);
-    expect(getRuntimeConfigOverride()).toEqual({
-      routingBaseUrl: 'https://override.example.com',
-      mockMode: true,
-    });
-  });
-
-  it('rejects invalid override values with production validation rules', () => {
-    expect(() =>
-      setRuntimeConfigOverride({
-        routingBaseUrl: 'http://localhost:3000',
-      }),
-    ).toThrow('type=non_https_in_production');
-  });
-
-  it('clear fully removes override state', () => {
-    setRuntimeConfigOverride({
-      routingBaseUrl: 'https://override.example.com',
-      mapStyleUrl: 'https://override.example.com/style.json',
-      mapTileEndpoint: 'https://override.example.com/{z}/{x}/{y}.pbf',
-      mockMode: true,
-    });
+    expect(withOverride.config.routingBaseUrl).toBe('https://override.example.com');
+    expect(diagWithOverride.sources.routingBaseUrl).toBe('override');
 
     clearRuntimeConfigOverride();
 
-    expect(getRuntimeConfigOverride()).toEqual({});
+    const afterClear = getRuntimeConfigSafe();
+    const diagAfterClear = getRuntimeConfigDiagnostics();
+
+    expect(afterClear.ok).toBe(true);
+    if (!afterClear.ok) {
+      throw new Error('Expected success result');
+    }
+    expect(afterClear.config.routingBaseUrl).toBe('https://api.example.com');
+    expect(diagAfterClear.sources.routingBaseUrl).toBe('process_env');
+  });
+
+  it('precedence order: override > process_env > expo_extra > fallback', async () => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'development',
+      EXPO_PUBLIC_ROUTING_BASE_URL: 'https://process.example.com',
+      EXPO_PUBLIC_MAP_STYLE_URL: 'https://process.example.com/style.json',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: 'https://process.example.com/{z}/{x}/{y}.pbf',
+    };
+
+    vi.stubGlobal('require', (id: string) => {
+      if (id === 'expo-constants') {
+        return {
+          default: {
+            expoConfig: {
+              extra: {
+                routingBaseUrl: 'https://expo.example.com',
+                mapStyleUrl: 'https://expo.example.com/style.json',
+                mapTileEndpoint: 'https://expo.example.com/{z}/{x}/{y}.pbf',
+              },
+            },
+          },
+        };
+      }
+      throw new Error(`Unexpected module request: ${id}`);
+    });
+
+    const {
+      clearRuntimeConfigOverride,
+      getRuntimeConfigDiagnostics,
+      getRuntimeConfigSafe,
+      setRuntimeConfigOverride,
+    } = await loadConfigModule();
+
+    setRuntimeConfigOverride({ routingBaseUrl: 'https://override.example.com' });
+
+    const withOverride = getRuntimeConfigSafe();
+    expect(withOverride.ok).toBe(true);
+    if (!withOverride.ok) {
+      throw new Error('Expected success result');
+    }
+    expect(withOverride.config.routingBaseUrl).toBe('https://override.example.com');
+    expect(getRuntimeConfigDiagnostics().sources.routingBaseUrl).toBe('override');
+
+    clearRuntimeConfigOverride();
+
+    const withProcess = getRuntimeConfigSafe();
+    expect(withProcess.ok).toBe(true);
+    if (!withProcess.ok) {
+      throw new Error('Expected success result');
+    }
+    expect(withProcess.config.routingBaseUrl).toBe('https://process.example.com');
+    expect(getRuntimeConfigDiagnostics().sources.routingBaseUrl).toBe('process_env');
+
+    process.env = {
+      ...process.env,
+      EXPO_PUBLIC_ROUTING_BASE_URL: '',
+      EXPO_PUBLIC_MAP_STYLE_URL: '',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: '',
+    };
+
+    const withExpo = getRuntimeConfigSafe();
+    expect(withExpo.ok).toBe(true);
+    if (!withExpo.ok) {
+      throw new Error('Expected success result');
+    }
+    expect(withExpo.config.routingBaseUrl).toBe('https://expo.example.com');
+    expect(getRuntimeConfigDiagnostics().sources.routingBaseUrl).toBe('expo_extra');
+  });
+
+  it('production URL policy rejects non-https, localhost and private IP', async () => {
+    const { clearRuntimeConfigOverride, getRuntimeConfigSafe } = await loadConfigModule();
+
+    clearRuntimeConfigOverride();
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'production',
+      EXPO_PUBLIC_ROUTING_BASE_URL: 'http://api.example.com',
+      EXPO_PUBLIC_MAP_STYLE_URL: 'https://maps.example.com/style.json',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: 'https://tiles.example.com/{z}/{x}/{y}.pbf',
+    };
+    let result = getRuntimeConfigSafe();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('type=non_https_in_production');
+    }
+
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'production',
+      EXPO_PUBLIC_ROUTING_BASE_URL: 'https://localhost:3000',
+      EXPO_PUBLIC_MAP_STYLE_URL: 'https://maps.example.com/style.json',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: 'https://tiles.example.com/{z}/{x}/{y}.pbf',
+    };
+    result = getRuntimeConfigSafe();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('type=localhost_in_production');
+    }
+
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'production',
+      EXPO_PUBLIC_ROUTING_BASE_URL: 'https://10.0.0.12:8080',
+      EXPO_PUBLIC_MAP_STYLE_URL: 'https://maps.example.com/style.json',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: 'https://tiles.example.com/{z}/{x}/{y}.pbf',
+    };
+    result = getRuntimeConfigSafe();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('type=private_ip_in_production');
+    }
   });
 });
