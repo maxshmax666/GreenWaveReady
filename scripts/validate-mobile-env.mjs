@@ -20,10 +20,10 @@ const fail = (message) => {
 };
 
 const looksMaskedOrPlaceholder = (value) => {
-  const normalized = value.trim().toLowerCase();
+  const normalized = value.trim().replace(/^['"]|['"]$/g, '').toLowerCase();
 
   if (!normalized) return true;
-  if (normalized === '***') return true;
+  if (/^\*+$/.test(normalized)) return true;
   if (normalized.includes('<secret>')) return true;
   if (normalized.includes('changeme')) return true;
   if (normalized.includes('placeholder')) return true;
@@ -56,6 +56,10 @@ const isPrivateIp = (hostname) => {
 };
 
 const validateUrl = (envName, value) => {
+  if (!isDevelopment && looksMaskedOrPlaceholder(value)) {
+    fail(`${envName} looks like a masked/placeholder value in ${mode}. Configure a real public HTTPS URL.`);
+  }
+
   let parsed;
   try {
     parsed = new URL(value);
