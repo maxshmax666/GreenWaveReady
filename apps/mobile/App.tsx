@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { getRuntimeConfigSafe, type RuntimeConfig } from '@greenwave/config';
+import {
+  getRuntimeConfigDiagnostics,
+  getRuntimeConfigSafe,
+  type RuntimeConfig,
+  type RuntimeConfigDiagnostics,
+} from '@greenwave/config';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { NavigationRoot } from './src/app/navigation-root';
 
@@ -15,20 +20,33 @@ const getHostForLog = (rawUrl: string): string => {
   }
 };
 
-const RuntimeConfigErrorScreen = ({ error }: { error: string }): React.JSX.Element => (
-  <SafeAreaView style={styles.container}>
-    <View style={styles.content}>
-      <Text style={styles.title}>Configuration error</Text>
-      <Text style={styles.body}>{error}</Text>
-      <Text style={styles.help}>
-        Set EXPO_PUBLIC_ROUTING_BASE_URL and EXPO_PUBLIC_MAP_STYLE_URL in your environment and restart the app.
-      </Text>
-    </View>
-  </SafeAreaView>
-);
+const RuntimeConfigErrorScreen = ({
+  error,
+  diagnostics,
+}: {
+  error: string;
+  diagnostics: RuntimeConfigDiagnostics;
+}): React.JSX.Element => {
+  const primaryError = diagnostics.errors[0];
+  const reason = primaryError
+    ? `Reason: ${primaryError.key} (${primaryError.rule})`
+    : 'Reason: unknown runtime config error';
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <Text style={styles.title}>Configuration error</Text>
+        <Text style={styles.body}>{error}</Text>
+        <Text style={styles.reason}>{reason}</Text>
+        <Text style={styles.help}>Hint: проверьте expo extra / env.</Text>
+      </View>
+    </SafeAreaView>
+  );
+};
 
 const App = (): React.JSX.Element => {
   const runtimeConfigResult = useMemo(() => getRuntimeConfigSafe(), []);
+  const runtimeConfigDiagnostics = useMemo(() => getRuntimeConfigDiagnostics(), []);
 
   useEffect(() => {
     if (didLogRuntimeConfig) {
@@ -37,6 +55,12 @@ const App = (): React.JSX.Element => {
 
     if (!runtimeConfigResult.ok) {
       console.error('[app] runtime config initialization failed:', runtimeConfigResult.error);
+      console.error('[app] runtime config diagnostics:', {
+        nodeEnv: runtimeConfigDiagnostics.nodeEnv,
+        errors: runtimeConfigDiagnostics.errors,
+        sources: runtimeConfigDiagnostics.sources,
+        resolvedHosts: runtimeConfigDiagnostics.resolvedHosts,
+      });
       didLogRuntimeConfig = true;
       return;
     }
@@ -45,10 +69,15 @@ const App = (): React.JSX.Element => {
     console.info('[app] runtime routing base host:', getHostForLog(config.routingBaseUrl));
     console.info('[app] runtime map style host:', getHostForLog(config.mapStyleUrl));
     didLogRuntimeConfig = true;
-  }, [runtimeConfigResult]);
+  }, [runtimeConfigDiagnostics, runtimeConfigResult]);
 
   if (!runtimeConfigResult.ok) {
-    return <RuntimeConfigErrorScreen error={runtimeConfigResult.error} />;
+    return (
+      <RuntimeConfigErrorScreen
+        error={runtimeConfigResult.error}
+        diagnostics={runtimeConfigDiagnostics}
+      />
+    );
   }
 
   return (
@@ -78,6 +107,11 @@ const styles = StyleSheet.create({
     color: '#fecaca',
     fontSize: 15,
     lineHeight: 22,
+  },
+  reason: {
+    color: '#fde68a',
+    fontSize: 14,
+    lineHeight: 20,
   },
   help: {
     color: '#cbd5e1',

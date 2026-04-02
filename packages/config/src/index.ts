@@ -7,6 +7,27 @@ type ExpoExtraMap = Partial<Record<ConfigKey, string | boolean>>;
 
 export type ConfigKey = 'routingBaseUrl' | 'mapStyleUrl' | 'mapTileEndpoint' | 'mockMode';
 export type ConfigSource = 'override' | 'process_env' | 'expo_extra' | 'fallback';
+export type ValidationErrorKind =
+  | 'missing_env'
+  | 'invalid_url'
+  | 'non_https_in_production'
+  | 'localhost_in_production'
+  | 'private_ip_in_production';
+
+export type RuntimeConfigDiagnostics = {
+  ok: boolean;
+  nodeEnv: string;
+  sources: Record<ConfigKey, ConfigSource>;
+  errors: Array<{ key: ConfigKey; rule: ValidationErrorKind; message: string }>;
+  resolvedHosts?: Partial<Record<ConfigKey, string>>;
+};
+
+const CONFIG_KEYS: readonly ConfigKey[] = [
+  'routingBaseUrl',
+  'mapStyleUrl',
+  'mapTileEndpoint',
+  'mockMode',
+] as const;
 
 const ENV_KEY_ALIASES: Record<ConfigKey, readonly string[]> = {
   routingBaseUrl: ['EXPO_PUBLIC_ROUTING_BASE_URL', 'ROUTING_BASE_URL'],
@@ -14,13 +35,6 @@ const ENV_KEY_ALIASES: Record<ConfigKey, readonly string[]> = {
   mapTileEndpoint: ['EXPO_PUBLIC_MAP_TILE_ENDPOINT', 'MAP_TILE_ENDPOINT'],
   mockMode: ['MOCK_MODE'],
 } as const;
-
-type ValidationErrorKind =
-  | 'missing_env'
-  | 'invalid_url'
-  | 'non_https_in_production'
-  | 'localhost_in_production'
-  | 'private_ip_in_production';
 
 const getProcessEnv = (): EnvMap =>
   typeof globalThis !== 'undefined' &&
@@ -202,114 +216,140 @@ const isPrivateIp = (hostname: string): boolean => {
 
 const formatValidationError = (params: {
   kind: ValidationErrorKind;
+  key: ConfigKey;
+  source: ConfigSource;
   envNames: string[];
   nodeEnv: string;
   host?: string;
 }): string => {
   const hostPart = params.host ? ` host=${params.host}` : '';
-  return `[config] validation_error type=${params.kind} env=${params.envNames.join(' | ')} nodeEnv=${params.nodeEnv}${hostPart}`;
+  return `[config] validation_error type=${params.kind} key=${params.key} source=${params.source} env=${params.envNames.join(' | ')} nodeEnv=${params.nodeEnv}${hostPart}`;
 };
 
-const parseRequiredUrl = (params: {
-  value: string;
+const buildValidationError = (params: {
+  key: ConfigKey;
+  source: ConfigSource;
+  rule: ValidationErrorKind;
   envNames: string[];
   nodeEnv: string;
-}): string => {
-  let parsed: URL;
+  host?: string;
+}): { key: ConfigKey; rule: ValidationErrorKind; message: string } => {
+  const message = params.host
+    ? formatValidationError({
+        kind: params.rule,
+        key: params.key,
+        source: params.source,
+        envNames: params.envNames,
+        nodeEnv: params.nodeEnv,
+        host: params.host,
+      })
+    : formatValidationError({
+        kind: params.rule,
+        key: params.key,
+        source: params.source,
+        envNames: params.envNames,
+        nodeEnv: params.nodeEnv,
+      });
 
-  try {
-    parsed = new URL(params.value);
-  } catch {
-    throw new Error(
-      formatValidationError({
-        kind: 'invalid_url',
+  return {
+    key: params.key,
+    rule: params.rule,
+    message,
+  };
+};
+
+const validateRuntimeUrl = (params: {
+  key: ConfigKey;
+  source: ConfigSource;
+  value: string | boolean | undefined;
+  envNames: string[];
+  nodeEnv: string;
+  requiredInProduction?: boolean;
+}): { value?: string; host?: string; error?: { key: ConfigKey; rule: ValidationErrorKind; message: string } } => {
+  const rawValue = typeof params.value === 'string' ? params.value.trim() : '';
+
+  if (!rawValue) {
+    if (params.requiredInProduction && params.nodeEnv === 'production') {
+      return {
+        error: buildValidationError({
+          key: params.key,
+          source: params.source,
+          rule: 'missing_env',
+          envNames: params.envNames,
+          nodeEnv: params.nodeEnv,
+        }),
+      };
+    }
+
+    return {
+      error: buildValidationError({
+        key: params.key,
+        source: params.source,
+        rule: 'missing_env',
         envNames: params.envNames,
         nodeEnv: params.nodeEnv,
       }),
-    );
+    };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawValue);
+  } catch {
+    return {
+      error: buildValidationError({
+        key: params.key,
+        source: params.source,
+        rule: 'invalid_url',
+        envNames: params.envNames,
+        nodeEnv: params.nodeEnv,
+      }),
+    };
   }
 
   if (params.nodeEnv !== 'development') {
     if (parsed.protocol !== 'https:') {
-      throw new Error(
-        formatValidationError({
-          kind: 'non_https_in_production',
+      return {
+        error: buildValidationError({
+          key: params.key,
+          source: params.source,
+          rule: 'non_https_in_production',
           envNames: params.envNames,
           nodeEnv: params.nodeEnv,
           host: parsed.host,
         }),
-      );
+      };
     }
 
     const hostname = parsed.hostname.toLowerCase();
     if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
-      throw new Error(
-        formatValidationError({
-          kind: 'localhost_in_production',
+      return {
+        error: buildValidationError({
+          key: params.key,
+          source: params.source,
+          rule: 'localhost_in_production',
           envNames: params.envNames,
           nodeEnv: params.nodeEnv,
           host: parsed.host,
         }),
-      );
+      };
     }
 
     if (isPrivateIp(hostname)) {
-      throw new Error(
-        formatValidationError({
-          kind: 'private_ip_in_production',
+      return {
+        error: buildValidationError({
+          key: params.key,
+          source: params.source,
+          rule: 'private_ip_in_production',
           envNames: params.envNames,
           nodeEnv: params.nodeEnv,
           host: parsed.host,
         }),
-      );
+      };
     }
   }
 
-  return params.value;
-};
-
-const parseRuntimeUrl = (params: {
-  env: EnvMap;
-  envNames: string[];
-  fallback: string | undefined;
-  nodeEnv: string;
-  requiredInProduction?: boolean;
-}): string => {
-  const configured = getEnvValue(params.env, ...params.envNames);
-
-  if (!configured) {
-    if (params.requiredInProduction && params.nodeEnv === 'production') {
-      throw new Error(
-        formatValidationError({
-          kind: 'missing_env',
-          envNames: params.envNames,
-          nodeEnv: params.nodeEnv,
-        }),
-      );
-    }
-
-    if (params.fallback) {
-      return parseRequiredUrl({
-        value: params.fallback,
-        envNames: params.envNames,
-        nodeEnv: params.nodeEnv,
-      });
-    }
-
-    throw new Error(
-      formatValidationError({
-        kind: 'missing_env',
-        envNames: params.envNames,
-        nodeEnv: params.nodeEnv,
-      }),
-    );
-  }
-
-  return parseRequiredUrl({
-    value: configured,
-    envNames: params.envNames,
-    nodeEnv: params.nodeEnv,
-  });
+  return { value: rawValue, host: parsed.host };
 };
 
 export type RuntimeConfig = {
@@ -322,73 +362,119 @@ export type RuntimeConfig = {
 const parseBoolean = (value: string | boolean): boolean =>
   typeof value === 'boolean' ? value : value.trim().toLowerCase() === 'true';
 
-const toEnvValue = (value: string | boolean | undefined): EnvMap =>
-  value === undefined ? {} : { resolved: String(value) };
+type RuntimeConfigEvaluation = {
+  config: RuntimeConfig | null;
+  diagnostics: RuntimeConfigDiagnostics;
+};
+
+const evaluateRuntimeConfig = (): RuntimeConfigEvaluation => {
+  const env = getProcessEnv();
+  const nodeEnv = getNodeEnv(env);
+  const expoExtra = readExpoExtra();
+
+  const resolved = CONFIG_KEYS.reduce(
+    (acc, key) => {
+      const entry = resolveConfigValue({ key, env, expoExtra, nodeEnv });
+      acc[key] = entry;
+      return acc;
+    },
+    {} as Record<ConfigKey, { source: ConfigSource; value: string | boolean } | null>,
+  );
+
+  const sources = CONFIG_KEYS.reduce(
+    (acc, key) => {
+      acc[key] = resolved[key]?.source ?? 'fallback';
+      return acc;
+    },
+    {} as Record<ConfigKey, ConfigSource>,
+  );
+
+  const errors: RuntimeConfigDiagnostics['errors'] = [];
+  const resolvedHosts: Partial<Record<ConfigKey, string>> = {};
+
+  const routingValidation = validateRuntimeUrl({
+    key: 'routingBaseUrl',
+    source: sources.routingBaseUrl,
+    value: resolved.routingBaseUrl?.value,
+    envNames: [...ENV_KEY_ALIASES.routingBaseUrl],
+    nodeEnv,
+    requiredInProduction: true,
+  });
+  if (routingValidation.error) {
+    errors.push(routingValidation.error);
+  }
+  if (routingValidation.host) {
+    resolvedHosts.routingBaseUrl = routingValidation.host;
+  }
+
+  const mapStyleValidation = validateRuntimeUrl({
+    key: 'mapStyleUrl',
+    source: sources.mapStyleUrl,
+    value: resolved.mapStyleUrl?.value,
+    envNames: [...ENV_KEY_ALIASES.mapStyleUrl],
+    nodeEnv,
+    requiredInProduction: true,
+  });
+  if (mapStyleValidation.error) {
+    errors.push(mapStyleValidation.error);
+  }
+  if (mapStyleValidation.host) {
+    resolvedHosts.mapStyleUrl = mapStyleValidation.host;
+  }
+
+  const mapTilesValidation = validateRuntimeUrl({
+    key: 'mapTileEndpoint',
+    source: sources.mapTileEndpoint,
+    value: resolved.mapTileEndpoint?.value,
+    envNames: [...ENV_KEY_ALIASES.mapTileEndpoint],
+    nodeEnv,
+  });
+  if (mapTilesValidation.error) {
+    errors.push(mapTilesValidation.error);
+  }
+  if (mapTilesValidation.host) {
+    resolvedHosts.mapTileEndpoint = mapTilesValidation.host;
+  }
+
+  const diagnostics: RuntimeConfigDiagnostics = {
+    ok: errors.length === 0,
+    nodeEnv,
+    sources,
+    errors,
+    ...(Object.keys(resolvedHosts).length > 0 ? { resolvedHosts } : {}),
+  };
+
+  if (errors.length > 0) {
+    return { config: null, diagnostics };
+  }
+
+  return {
+    config: {
+      routingBaseUrl: routingValidation.value as string,
+      mapStyleUrl: mapStyleValidation.value as string,
+      mapTileEndpoint: mapTilesValidation.value as string,
+      mockMode: resolved.mockMode ? parseBoolean(resolved.mockMode.value) : false,
+    },
+    diagnostics,
+  };
+};
+
+export const getRuntimeConfigDiagnostics = (): RuntimeConfigDiagnostics => evaluateRuntimeConfig().diagnostics;
 
 export const getRuntimeConfigSafe =
   (): { ok: true; config: RuntimeConfig } | { ok: false; error: string } => {
-    const env = getProcessEnv();
-    const nodeEnv = getNodeEnv(env);
-    const expoExtra = readExpoExtra();
-
-    try {
-      const routingBaseUrlResolved = resolveConfigValue({
-        key: 'routingBaseUrl',
-        env,
-        expoExtra,
-        nodeEnv,
-      });
-      const mapStyleUrlResolved = resolveConfigValue({
-        key: 'mapStyleUrl',
-        env,
-        expoExtra,
-        nodeEnv,
-      });
-      const mapTileEndpointResolved = resolveConfigValue({
-        key: 'mapTileEndpoint',
-        env,
-        expoExtra,
-        nodeEnv,
-      });
-      const mockModeResolved = resolveConfigValue({
-        key: 'mockMode',
-        env,
-        expoExtra,
-        nodeEnv,
-      });
-
-      return {
-        ok: true,
-        config: {
-          routingBaseUrl: parseRuntimeUrl({
-            env: toEnvValue(routingBaseUrlResolved?.value),
-            envNames: [...ENV_KEY_ALIASES.routingBaseUrl],
-            fallback: undefined,
-            nodeEnv,
-            requiredInProduction: true,
-          }),
-          mapStyleUrl: parseRuntimeUrl({
-            env: toEnvValue(mapStyleUrlResolved?.value),
-            envNames: [...ENV_KEY_ALIASES.mapStyleUrl],
-            fallback: undefined,
-            nodeEnv,
-            requiredInProduction: true,
-          }),
-          mapTileEndpoint: parseRuntimeUrl({
-            env: toEnvValue(mapTileEndpointResolved?.value),
-            envNames: [...ENV_KEY_ALIASES.mapTileEndpoint],
-            fallback: undefined,
-            nodeEnv,
-          }),
-          mockMode: mockModeResolved ? parseBoolean(mockModeResolved.value) : false,
-        },
-      };
-    } catch (error) {
+    const evaluation = evaluateRuntimeConfig();
+    if (!evaluation.config) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : '[config] validation_error type=unknown',
+        error: evaluation.diagnostics.errors[0]?.message ?? '[config] validation_error type=unknown',
       };
     }
+
+    return {
+      ok: true,
+      config: evaluation.config,
+    };
   };
 
 export const getRuntimeConfig = (): RuntimeConfig => {
