@@ -23,7 +23,6 @@ jobs:
     env:
       CI: "1"
       EXPO_PUBLIC_ROUTING_BASE_URL: ${{ secrets.EXPO_PUBLIC_ROUTING_BASE_URL || vars.EXPO_PUBLIC_ROUTING_BASE_URL }}
-      EXPO_PUBLIC_MAP_STYLE_URL: ${{ secrets.EXPO_PUBLIC_MAP_STYLE_URL || vars.EXPO_PUBLIC_MAP_STYLE_URL }}
       EXPO_PUBLIC_MAP_TILE_ENDPOINT: ${{ secrets.EXPO_PUBLIC_MAP_TILE_ENDPOINT || vars.EXPO_PUBLIC_MAP_TILE_ENDPOINT }}
 
     steps:
@@ -52,7 +51,6 @@ jobs:
         run: |
           required_vars=(
             EXPO_PUBLIC_ROUTING_BASE_URL
-            EXPO_PUBLIC_MAP_STYLE_URL
           )
 
           missing=()
@@ -70,6 +68,42 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Resolve production map style URL
+        env:
+          MAP_STYLE_URL_SECRET: ${{ secrets.EXPO_PUBLIC_MAP_STYLE_URL }}
+          MAP_STYLE_URL_VAR: ${{ vars.EXPO_PUBLIC_MAP_STYLE_URL }}
+        run: |
+          is_invalid_map_style_url() {
+            local value="$1"
+            local lower
+
+            lower="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+
+            [[ -z "$value" ]] && return 0
+            [[ "$value" == '***' ]] && return 0
+            [[ "$lower" == *'placeholder'* ]] && return 0
+            [[ "$lower" == *'changeme'* ]] && return 0
+            [[ "$value" == *'${{'* ]] && return 0
+
+            return 1
+          }
+
+          resolved_map_style_url=''
+          source='default'
+
+          if ! is_invalid_map_style_url "${MAP_STYLE_URL_SECRET:-}"; then
+            resolved_map_style_url="$MAP_STYLE_URL_SECRET"
+            source='secret'
+          elif ! is_invalid_map_style_url "${MAP_STYLE_URL_VAR:-}"; then
+            resolved_map_style_url="$MAP_STYLE_URL_VAR"
+            source='variable'
+          else
+            resolved_map_style_url='https://demotiles.maplibre.org/style.json'
+          fi
+
+          printf '%s\n' "EXPO_PUBLIC_MAP_STYLE_URL=$resolved_map_style_url" >> "$GITHUB_ENV"
+          printf '%s\n' "[release-env] EXPO_PUBLIC_MAP_STYLE_URL resolved from ${source}."
 
       - name: Validate mobile env (production)
         env:
