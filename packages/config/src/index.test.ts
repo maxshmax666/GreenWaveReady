@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { getRuntimeConfigSafe } from './index';
+import {
+  clearRuntimeConfigOverride,
+  getRuntimeConfigOverride,
+  getRuntimeConfigSafe,
+  setRuntimeConfigOverride,
+} from './index';
 
 const originalEnv = { ...process.env };
 
@@ -9,6 +14,7 @@ const resetEnv = (): void => {
 
 afterEach(() => {
   resetEnv();
+  clearRuntimeConfigOverride();
 });
 
 describe('getRuntimeConfigSafe', () => {
@@ -81,5 +87,52 @@ describe('getRuntimeConfigSafe', () => {
     }
     expect(result.error).toContain('type=private_ip_in_production');
     expect(result.error).toContain('host=10.0.0.12:8080');
+  });
+
+  it('applies runtime override as first resolver layer', () => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'production',
+      EXPO_PUBLIC_ROUTING_BASE_URL: 'https://api.example.com',
+      EXPO_PUBLIC_MAP_STYLE_URL: 'https://maps.example.com/style.json',
+    };
+    setRuntimeConfigOverride({
+      routingBaseUrl: 'https://override.example.com',
+      mockMode: true,
+    });
+
+    const result = getRuntimeConfigSafe();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error('Expected success result');
+    }
+    expect(result.config.routingBaseUrl).toBe('https://override.example.com');
+    expect(result.config.mockMode).toBe(true);
+    expect(getRuntimeConfigOverride()).toEqual({
+      routingBaseUrl: 'https://override.example.com',
+      mockMode: true,
+    });
+  });
+
+  it('rejects invalid override values with production validation rules', () => {
+    expect(() =>
+      setRuntimeConfigOverride({
+        routingBaseUrl: 'http://localhost:3000',
+      }),
+    ).toThrow('type=non_https_in_production');
+  });
+
+  it('clear fully removes override state', () => {
+    setRuntimeConfigOverride({
+      routingBaseUrl: 'https://override.example.com',
+      mapStyleUrl: 'https://override.example.com/style.json',
+      mapTileEndpoint: 'https://override.example.com/{z}/{x}/{y}.pbf',
+      mockMode: true,
+    });
+
+    clearRuntimeConfigOverride();
+
+    expect(getRuntimeConfigOverride()).toEqual({});
   });
 });

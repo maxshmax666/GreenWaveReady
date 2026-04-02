@@ -59,7 +59,7 @@ const getEnvValue = (env: EnvMap, ...keys: string[]): string | undefined => {
 const configOverrideStore: Partial<Record<ConfigKey, string | boolean>> = {};
 
 const setConfigOverride = <T extends ConfigKey>(key: T, value: RuntimeConfig[T]): void => {
-  configOverrideStore[key] = value;
+  setRuntimeConfigOverride({ [key]: value } as RuntimeConfigOverride);
 };
 
 const clearConfigOverrides = (): void => {
@@ -358,9 +358,55 @@ export type RuntimeConfig = {
   mapTileEndpoint: string;
   mockMode: boolean;
 };
+export type RuntimeConfigOverride = Partial<
+  Pick<RuntimeConfig, 'routingBaseUrl' | 'mapStyleUrl' | 'mapTileEndpoint' | 'mockMode'>
+>;
 
 const parseBoolean = (value: string | boolean): boolean =>
   typeof value === 'boolean' ? value : value.trim().toLowerCase() === 'true';
+
+const validateOverridePatch = (patch: RuntimeConfigOverride): void => {
+  if ('mockMode' in patch && patch.mockMode !== undefined && typeof patch.mockMode !== 'boolean') {
+    throw new Error(
+      '[config] validation_error type=invalid_override key=mockMode source=override expected=boolean',
+    );
+  }
+
+  const urlEntries: Array<[ConfigKey, string | undefined]> = [
+    ['routingBaseUrl', patch.routingBaseUrl],
+    ['mapStyleUrl', patch.mapStyleUrl],
+    ['mapTileEndpoint', patch.mapTileEndpoint],
+  ];
+
+  for (const [key, value] of urlEntries) {
+    if (value === undefined) {
+      continue;
+    }
+
+    const validation = validateRuntimeUrl({
+      key,
+      source: 'override',
+      value,
+      envNames: [...ENV_KEY_ALIASES[key]],
+      nodeEnv: 'production',
+      requiredInProduction: true,
+    });
+    if (validation.error) {
+      throw new Error(validation.error.message);
+    }
+  }
+};
+
+export const setRuntimeConfigOverride = (patch: RuntimeConfigOverride): void => {
+  validateOverridePatch(patch);
+  Object.assign(configOverrideStore, patch);
+};
+
+export const clearRuntimeConfigOverride = (): void => {
+  clearConfigOverrides();
+};
+
+export const getRuntimeConfigOverride = (): RuntimeConfigOverride => ({ ...configOverrideStore });
 
 type RuntimeConfigEvaluation = {
   config: RuntimeConfig | null;
@@ -488,15 +534,39 @@ export const getRuntimeConfig = (): RuntimeConfig => {
 
 const runtimeConfigResult = getRuntimeConfigSafe();
 
-export const runtimeConfig: RuntimeConfig = runtimeConfigResult.ok
-  ? runtimeConfigResult.config
-  : {
-      routingBaseUrl: 'http://localhost:3000',
-      mapStyleUrl: DEFAULT_MAP_STYLE_URL,
-      mapTileEndpoint: DEFAULT_MAP_TILE_ENDPOINT,
-      mockMode: false,
+export const runtimeConfig: RuntimeConfig = new Proxy({} as RuntimeConfig, {
+  get: (_target, property: string | symbol): RuntimeConfig[keyof RuntimeConfig] | undefined => {
+    if (typeof property !== 'string') {
+      return undefined;
+    }
+
+    const config = getRuntimeConfig();
+    return config[property as keyof RuntimeConfig];
+  },
+  ownKeys: (): ArrayLike<string | symbol> => Reflect.ownKeys(getRuntimeConfig()),
+  getOwnPropertyDescriptor: (
+    _target,
+    property: string | symbol,
+  ): PropertyDescriptor | undefined => {
+    if (typeof property !== 'string') {
+      return undefined;
+    }
+
+    const config = getRuntimeConfig();
+    return {
+      configurable: true,
+      enumerable: true,
+      value: config[property as keyof RuntimeConfig],
+      writable: false,
     };
+  },
+});
 
 export const runtimeConfigInitError: string | null = runtimeConfigResult.ok ? null : runtimeConfigResult.error;
 
-export { clearConfigOverrides, readExpoExtra, resolveConfigValue, setConfigOverride };
+export {
+  clearConfigOverrides,
+  readExpoExtra,
+  resolveConfigValue,
+  setConfigOverride,
+};
