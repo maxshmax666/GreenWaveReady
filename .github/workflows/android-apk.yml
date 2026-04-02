@@ -62,7 +62,7 @@ jobs:
             [[ "$normalized" == '***' ]] && return 0
             [[ "$normalized" == *'placeholder'* ]] && return 0
             [[ "$normalized" == *'changeme'* ]] && return 0
-            [[ "$normalized" == *'${{'* ]] && return 0
+            [[ "$normalized" == *'$''{{'* ]] && return 0
             [[ "$normalized" == *'}}'* ]] && return 0
 
             return 1
@@ -105,7 +105,7 @@ jobs:
             [[ "$value" == '***' ]] && return 0
             [[ "$lower" == *'placeholder'* ]] && return 0
             [[ "$lower" == *'changeme'* ]] && return 0
-            [[ "$value" == *'${{'* ]] && return 0
+            [[ "$value" == *'$''{{'* ]] && return 0
 
             return 1
           }
