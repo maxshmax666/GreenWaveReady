@@ -3,6 +3,17 @@ const DEFAULT_MAP_TILE_ENDPOINT =
   'https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf';
 
 type EnvMap = Record<string, string | undefined>;
+type ExpoExtraMap = Partial<Record<ConfigKey, string | boolean>>;
+
+export type ConfigKey = 'routingBaseUrl' | 'mapStyleUrl' | 'mapTileEndpoint' | 'mockMode';
+export type ConfigSource = 'override' | 'process_env' | 'expo_extra' | 'fallback';
+
+const ENV_KEY_ALIASES: Record<ConfigKey, readonly string[]> = {
+  routingBaseUrl: ['EXPO_PUBLIC_ROUTING_BASE_URL', 'ROUTING_BASE_URL'],
+  mapStyleUrl: ['EXPO_PUBLIC_MAP_STYLE_URL', 'MAP_STYLE_URL'],
+  mapTileEndpoint: ['EXPO_PUBLIC_MAP_TILE_ENDPOINT', 'MAP_TILE_ENDPOINT'],
+  mockMode: ['MOCK_MODE'],
+} as const;
 
 type ValidationErrorKind =
   | 'missing_env'
@@ -29,6 +40,128 @@ const getEnvValue = (env: EnvMap, ...keys: string[]): string | undefined => {
   }
 
   return undefined;
+};
+
+const configOverrideStore: Partial<Record<ConfigKey, string | boolean>> = {};
+
+const setConfigOverride = <T extends ConfigKey>(key: T, value: RuntimeConfig[T]): void => {
+  configOverrideStore[key] = value;
+};
+
+const clearConfigOverrides = (): void => {
+  for (const key of Object.keys(configOverrideStore) as ConfigKey[]) {
+    delete configOverrideStore[key];
+  }
+};
+
+const normalizeExtraValue = (value: unknown): string | boolean | undefined => {
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  return undefined;
+};
+
+const readExpoExtra = (): ExpoExtraMap => {
+  const maybeRequire = (globalThis as { require?: (id: string) => unknown }).require;
+  if (typeof maybeRequire !== 'function') {
+    return {};
+  }
+
+  let moduleExports: unknown;
+  try {
+    moduleExports = maybeRequire('expo-constants');
+  } catch {
+    return {};
+  }
+
+  const constants = (moduleExports as { default?: unknown }).default as
+    | { expoConfig?: { extra?: Record<string, unknown> }; manifest2?: { extra?: Record<string, unknown> } }
+    | undefined;
+
+  if (!constants) {
+    return {};
+  }
+
+  const candidates: Record<string, unknown>[] = [];
+  if (constants.expoConfig?.extra && typeof constants.expoConfig.extra === 'object') {
+    candidates.push(constants.expoConfig.extra);
+  }
+  if (constants.manifest2?.extra && typeof constants.manifest2.extra === 'object') {
+    candidates.push(constants.manifest2.extra);
+  }
+
+  const normalized: ExpoExtraMap = {};
+  for (const source of candidates) {
+    const routingBaseUrl = normalizeExtraValue(source.routingBaseUrl);
+    if (routingBaseUrl !== undefined) {
+      normalized.routingBaseUrl = routingBaseUrl;
+    }
+
+    const mapStyleUrl = normalizeExtraValue(source.mapStyleUrl);
+    if (mapStyleUrl !== undefined) {
+      normalized.mapStyleUrl = mapStyleUrl;
+    }
+
+    const mapTileEndpoint = normalizeExtraValue(source.mapTileEndpoint);
+    if (mapTileEndpoint !== undefined) {
+      normalized.mapTileEndpoint = mapTileEndpoint;
+    }
+  }
+
+  return normalized;
+};
+
+const resolveFallbackValue = (key: ConfigKey, nodeEnv: string): string | boolean | undefined => {
+  if (key === 'routingBaseUrl') {
+    return nodeEnv === 'development' ? 'http://localhost:3000' : undefined;
+  }
+  if (key === 'mapStyleUrl') {
+    return nodeEnv === 'development' ? DEFAULT_MAP_STYLE_URL : undefined;
+  }
+  if (key === 'mapTileEndpoint') {
+    return DEFAULT_MAP_TILE_ENDPOINT;
+  }
+  if (key === 'mockMode') {
+    return false;
+  }
+  return undefined;
+};
+
+const resolveConfigValue = (params: {
+  key: ConfigKey;
+  env: EnvMap;
+  expoExtra: ExpoExtraMap;
+  nodeEnv: string;
+}): { source: ConfigSource; value: string | boolean } | null => {
+  const override = configOverrideStore[params.key];
+  if (override !== undefined) {
+    return { source: 'override', value: override };
+  }
+
+  const envValue = getEnvValue(params.env, ...ENV_KEY_ALIASES[params.key]);
+  if (envValue !== undefined) {
+    return { source: 'process_env', value: envValue };
+  }
+
+  if (params.key !== 'mockMode') {
+    const extraValue = params.expoExtra[params.key];
+    if (extraValue !== undefined) {
+      return { source: 'expo_extra', value: extraValue };
+    }
+  }
+
+  const fallbackValue = resolveFallbackValue(params.key, params.nodeEnv);
+  if (fallbackValue !== undefined) {
+    return { source: 'fallback', value: fallbackValue };
+  }
+
+  return null;
 };
 
 const isPrivateIp = (hostname: string): boolean => {
@@ -186,36 +319,68 @@ export type RuntimeConfig = {
   mockMode: boolean;
 };
 
+const parseBoolean = (value: string | boolean): boolean =>
+  typeof value === 'boolean' ? value : value.trim().toLowerCase() === 'true';
+
+const toEnvValue = (value: string | boolean | undefined): EnvMap =>
+  value === undefined ? {} : { resolved: String(value) };
+
 export const getRuntimeConfigSafe =
   (): { ok: true; config: RuntimeConfig } | { ok: false; error: string } => {
     const env = getProcessEnv();
     const nodeEnv = getNodeEnv(env);
+    const expoExtra = readExpoExtra();
 
     try {
+      const routingBaseUrlResolved = resolveConfigValue({
+        key: 'routingBaseUrl',
+        env,
+        expoExtra,
+        nodeEnv,
+      });
+      const mapStyleUrlResolved = resolveConfigValue({
+        key: 'mapStyleUrl',
+        env,
+        expoExtra,
+        nodeEnv,
+      });
+      const mapTileEndpointResolved = resolveConfigValue({
+        key: 'mapTileEndpoint',
+        env,
+        expoExtra,
+        nodeEnv,
+      });
+      const mockModeResolved = resolveConfigValue({
+        key: 'mockMode',
+        env,
+        expoExtra,
+        nodeEnv,
+      });
+
       return {
         ok: true,
         config: {
           routingBaseUrl: parseRuntimeUrl({
-            env,
-            envNames: ['EXPO_PUBLIC_ROUTING_BASE_URL', 'ROUTING_BASE_URL'],
-            fallback: nodeEnv === 'development' ? 'http://localhost:3000' : undefined,
+            env: toEnvValue(routingBaseUrlResolved?.value),
+            envNames: [...ENV_KEY_ALIASES.routingBaseUrl],
+            fallback: undefined,
             nodeEnv,
             requiredInProduction: true,
           }),
           mapStyleUrl: parseRuntimeUrl({
-            env,
-            envNames: ['EXPO_PUBLIC_MAP_STYLE_URL', 'MAP_STYLE_URL'],
-            fallback: nodeEnv === 'development' ? DEFAULT_MAP_STYLE_URL : undefined,
+            env: toEnvValue(mapStyleUrlResolved?.value),
+            envNames: [...ENV_KEY_ALIASES.mapStyleUrl],
+            fallback: undefined,
             nodeEnv,
             requiredInProduction: true,
           }),
           mapTileEndpoint: parseRuntimeUrl({
-            env,
-            envNames: ['EXPO_PUBLIC_MAP_TILE_ENDPOINT', 'MAP_TILE_ENDPOINT'],
-            fallback: DEFAULT_MAP_TILE_ENDPOINT,
+            env: toEnvValue(mapTileEndpointResolved?.value),
+            envNames: [...ENV_KEY_ALIASES.mapTileEndpoint],
+            fallback: undefined,
             nodeEnv,
           }),
-          mockMode: env.MOCK_MODE === 'true',
+          mockMode: mockModeResolved ? parseBoolean(mockModeResolved.value) : false,
         },
       };
     } catch (error) {
@@ -247,3 +412,5 @@ export const runtimeConfig: RuntimeConfig = runtimeConfigResult.ok
     };
 
 export const runtimeConfigInitError: string | null = runtimeConfigResult.ok ? null : runtimeConfigResult.error;
+
+export { clearConfigOverrides, readExpoExtra, resolveConfigValue, setConfigOverride };
