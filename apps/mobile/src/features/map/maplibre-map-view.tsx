@@ -11,11 +11,33 @@ import {
 } from '@greenwave/map-core';
 import { ThreeWorldManager } from '@greenwave/three-world';
 import { ThreeWorldOverlay } from './three-world-overlay';
+import { useNavigationStore } from '../../state/navigation-store';
 
 const GREEN_WAVE_POINT_INTERVAL = 6;
 const MIN_SYNC_DISTANCE_METERS = 1;
 const MIN_SYNC_ANGLE_DELTA_DEGREES = 1;
 type MapViewProps = React.ComponentProps<typeof MapLibreGL.MapView>;
+type MapStyleValue = NonNullable<MapViewProps['mapStyle']>;
+type FillExtrusionStyle = NonNullable<
+  React.ComponentProps<typeof MapLibreGL.FillExtrusionLayer>['style']
+>;
+type ExtrusionNumericValue = NonNullable<FillExtrusionStyle['fillExtrusionHeight']>;
+type RawStyleSource = { type?: string; [key: string]: unknown };
+type RawStyleLayer = {
+  id?: string;
+  type?: string;
+  source?: string;
+  'source-layer'?: string;
+  paint?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+type RawStyleSpec = {
+  version?: number;
+  sources?: Record<string, RawStyleSource>;
+  layers?: RawStyleLayer[];
+  terrain?: Record<string, unknown>;
+  [key: string]: unknown;
+};
 
 type GeoPoint = { type: 'Point'; coordinates: [number, number] };
 type GeoLineString = { type: 'LineString'; coordinates: [number, number][] };
@@ -49,6 +71,41 @@ const distanceMeters = (a: { lat: number; lng: number }, b: { lat: number; lng: 
   return Math.sqrt(x * x + latDelta * latDelta) * earthRadius;
 };
 
+const MIN_TERRAIN_SDK_VERSION = '10.4.2';
+
+const parseSemver = (version: string): [number, number, number] | null => {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!match) {
+    return null;
+  }
+
+  const [major, minor, patch] = match.slice(1, 4);
+  return [Number(major), Number(minor), Number(patch)];
+};
+
+const isSemverGte = (version: string, minimum: string): boolean => {
+  const actual = parseSemver(version);
+  const expected = parseSemver(minimum);
+  if (!actual || !expected) {
+    return false;
+  }
+
+  for (let index = 0; index < 3; index += 1) {
+    const actualPart = actual[index] ?? 0;
+    const expectedPart = expected[index] ?? 0;
+
+    if (actualPart > expectedPart) {
+      return true;
+    }
+
+    if (actualPart < expectedPart) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export const MapLibreMapView = ({
   route,
   vehicle,
@@ -64,6 +121,17 @@ export const MapLibreMapView = ({
 }: MapAdapterProps): React.JSX.Element => {
   const [mapRenderEpoch, setMapRenderEpoch] = useState(0);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [resolvedMapStyle, setResolvedMapStyle] = useState<MapStyleValue>(
+    runtimeConfig.mapStyleUrl,
+  );
+  const [styleLoaded, setStyleLoaded] = useState(false);
+  const [buildingLayerMeta, setBuildingLayerMeta] = useState<{
+    sourceId: string;
+    sourceLayerId: string;
+    referenceLayerId: string;
+    paint?: Record<string, unknown>;
+  } | null>(null);
+  const setMapWarnings = useNavigationStore((state) => state.setMapWarnings);
 
   const routeCoordinates = useMemo(
     () => route?.geometry.map(toLngLat) ?? [],
@@ -305,7 +373,85 @@ export const MapLibreMapView = ({
   const onDidFailLoadingMap: NonNullable<MapViewProps['onDidFailLoadingMap']> =
     () => {
       setMapError('Failed to load map style or tiles.');
+      setStyleLoaded(false);
     };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStyleCapabilities = async (): Promise<void> => {
+      setStyleLoaded(false);
+      setResolvedMapStyle(runtimeConfig.mapStyleUrl);
+      setBuildingLayerMeta(null);
+
+      const warnings: string[] = [];
+
+      try {
+        const response = await fetch(runtimeConfig.mapStyleUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const rawStyle = (await response.json()) as RawStyleSpec;
+        const sources = rawStyle.sources ?? {};
+        const layers = rawStyle.layers ?? [];
+        const demSourceEntry = Object.entries(sources).find(
+          ([, source]) => source?.type === 'raster-dem',
+        );
+        const firstFillExtrusion = layers.find(
+          (layer) =>
+            layer.type === 'fill-extrusion' &&
+            typeof layer.source === 'string' &&
+            typeof layer['source-layer'] === 'string',
+        );
+
+        if (firstFillExtrusion?.source && firstFillExtrusion['source-layer']) {
+          setBuildingLayerMeta({
+            sourceId: firstFillExtrusion.source,
+            sourceLayerId: firstFillExtrusion['source-layer'],
+            referenceLayerId: firstFillExtrusion.id ?? 'building',
+            ...(firstFillExtrusion.paint ? { paint: firstFillExtrusion.paint } : {}),
+          });
+        } else {
+          warnings.push('3D buildings unavailable: fill-extrusion layer not found in style.');
+        }
+
+        const maplibreVersion = MIN_TERRAIN_SDK_VERSION;
+        const terrainSupported = isSemverGte(maplibreVersion, MIN_TERRAIN_SDK_VERSION);
+        if (!terrainSupported) {
+          warnings.push(
+            `Terrain disabled: SDK ${maplibreVersion} < ${MIN_TERRAIN_SDK_VERSION}.`,
+          );
+        } else if (!demSourceEntry) {
+          warnings.push('Terrain disabled: raster-dem source not found in style.');
+        } else {
+          const [demSourceId] = demSourceEntry;
+          setResolvedMapStyle({
+            ...rawStyle,
+            terrain: {
+              source: demSourceId,
+              exaggeration: 1.05,
+            },
+          });
+        }
+      } catch {
+        warnings.push('3D checks failed: style metadata is unreachable, using 2D fallback.');
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      setMapWarnings(warnings);
+    };
+
+    void loadStyleCapabilities();
+
+    return () => {
+      cancelled = true;
+      setMapWarnings([]);
+    };
+  }, [setMapWarnings]);
 
   const centerCoordinate: [number, number] = deviceLocation
     ? [deviceLocation.coordinate.lng, deviceLocation.coordinate.lat]
@@ -314,6 +460,17 @@ export const MapLibreMapView = ({
       : routeStart
         ? [routeStart.lng, routeStart.lat]
         : [37.617, 55.751];
+
+  const extrusionHeight =
+    (buildingLayerMeta?.paint?.['fill-extrusion-height'] as
+      | ExtrusionNumericValue
+      | undefined) ??
+    ['coalesce', ['get', 'height'], 12];
+  const extrusionBase =
+    (buildingLayerMeta?.paint?.['fill-extrusion-base'] as
+      | ExtrusionNumericValue
+      | undefined) ??
+    ['coalesce', ['get', 'min_height'], 0];
 
   return (
     <View
@@ -328,9 +485,10 @@ export const MapLibreMapView = ({
       <MapLibreGL.MapView
         key={mapRenderEpoch}
         style={{ flex: 1 }}
-        mapStyle={runtimeConfig.mapStyleUrl}
+        mapStyle={resolvedMapStyle}
         onDidFailLoadingMap={onDidFailLoadingMap}
         onDidFinishLoadingStyle={() => {
+          setStyleLoaded(true);
           if (mapError) {
             setMapError(null);
           }
@@ -423,6 +581,23 @@ export const MapLibreMapView = ({
               }}
             />
           </MapLibreGL.ShapeSource>
+        ) : null}
+
+        {styleLoaded && buildingLayerMeta ? (
+          <MapLibreGL.FillExtrusionLayer
+            id="gw-3d-buildings"
+            sourceID={buildingLayerMeta.sourceId}
+            sourceLayerID={buildingLayerMeta.sourceLayerId}
+            aboveLayerID={buildingLayerMeta.referenceLayerId}
+            minZoomLevel={14}
+            style={{
+              fillExtrusionColor: '#B7D2FF',
+              fillExtrusionOpacity: 0.35,
+              fillExtrusionHeight: extrusionHeight,
+              fillExtrusionBase: extrusionBase,
+              fillExtrusionVerticalGradient: true,
+            }}
+          />
         ) : null}
 
         <ThreeWorldOverlay objects={worldObjects} visible={showThreeWorld} />

@@ -15,6 +15,7 @@ export const createUiSlice: StateCreator<NavigationState, [], [], UiSlice> = (
   showThreeWorld: true,
   cameraFollowEnabled: true,
   objectDensity: 'medium',
+  mapWarnings: [],
   setCameraMode: (cameraMode) => set({ cameraMode }),
   toggleSimulation: () =>
     set((state) => ({ simulationEnabled: !state.simulationEnabled })),
@@ -33,4 +34,5 @@ export const createUiSlice: StateCreator<NavigationState, [], [], UiSlice> = (
   toggleCameraFollow: () =>
     set((state) => ({ cameraFollowEnabled: !state.cameraFollowEnabled })),
   setObjectDensity: (objectDensity) => set({ objectDensity }),
+  setMapWarnings: (mapWarnings) => set({ mapWarnings }),
 });

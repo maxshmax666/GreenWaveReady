@@ -27,6 +27,7 @@ export type UiSlice = {
   showThreeWorld: boolean;
   cameraFollowEnabled: boolean;
   objectDensity: QualityMode;
+  mapWarnings: string[];
   setCameraMode: (mode: CameraMode) => void;
   toggleSimulation: () => void;
   toggleDebugHud: () => void;
@@ -38,6 +39,7 @@ export type UiSlice = {
   toggleThreeWorld: () => void;
   toggleCameraFollow: () => void;
   setObjectDensity: (mode: QualityMode) => void;
+  setMapWarnings: (warnings: string[]) => void;
 };
 
 export type NavigationState = RouteSlice & VehicleSlice & UiSlice;

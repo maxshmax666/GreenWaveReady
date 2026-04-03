@@ -6,7 +6,7 @@ import { useNavigationStore } from '../../state/navigation-store';
 import { selectDebugHudState } from '../../state/selectors';
 
 export const DebugHud = (): React.JSX.Element | null => {
-  const { debugHud, vehicleState, activeRoute } = useNavigationStore(
+  const { debugHud, vehicleState, activeRoute, mapWarnings } = useNavigationStore(
     useShallow(selectDebugHudState),
   );
 
@@ -28,6 +28,11 @@ export const DebugHud = (): React.JSX.Element | null => {
       <Text style={{ color: '#AAB4CA', fontSize: 11 }}>
         route pts: {activeRoute?.geometry.length ?? 0}
       </Text>
+      {mapWarnings.map((warning) => (
+        <Text key={warning} style={{ color: '#FFCC80', fontSize: 11 }}>
+          ⚠ {warning}
+        </Text>
+      ))}
     </GlassPanel>
   );
 };
