@@ -1,8 +1,14 @@
-const DEFAULT_MAP_STYLE_URL = 'https://demotiles.maplibre.org/style.json';
+const DEFAULT_MAP_STYLE_URL =
+  'https://api.maptiler.com/maps/streets-v2/style.json?key=YOUR_MAPTILER_KEY';
 const DEFAULT_MAP_TILE_ENDPOINT =
-  'https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf';
+  'https://api.maptiler.com/tiles/v3/{z}/{x}/{y}.pbf?key=YOUR_MAPTILER_KEY';
 
 type EnvMap = Record<string, string | undefined>;
+type RuntimeFetcher = (input: string, init?: RequestInit) => Promise<{
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+}>;
 type ExpoExtraMap = Partial<Record<ConfigKey, string | boolean>>;
 type ExpoConstantsLike = {
   expoConfig?: { extra?: Record<string, unknown> } | null;
@@ -24,6 +30,15 @@ export type RuntimeConfigDiagnostics = {
   sources: Record<ConfigKey, ConfigSource>;
   errors: Array<{ key: ConfigKey; rule: ValidationErrorKind; message: string }>;
   resolvedHosts?: Partial<Record<ConfigKey, string>>;
+};
+
+export type RuntimeMapStyleDiagnostics = {
+  ok: boolean;
+  styleUrl: string;
+  sourceCount: number;
+  usableSourceCount: number;
+  hasVectorOrRasterSource: boolean;
+  warnings: string[];
 };
 
 const CONFIG_KEYS: readonly ConfigKey[] = [
@@ -541,6 +556,74 @@ export const getRuntimeConfig = (): RuntimeConfig => {
   }
 
   return result.config;
+};
+
+export const validateMapStyleSources = async (params: {
+  styleUrl: string;
+  fetcher?: RuntimeFetcher;
+}): Promise<RuntimeMapStyleDiagnostics> => {
+  const styleUrl = params.styleUrl.trim();
+  const fetcher =
+    params.fetcher ??
+    (typeof fetch === 'function'
+      ? (fetch.bind(globalThis) as unknown as RuntimeFetcher)
+      : undefined);
+
+  if (!fetcher) {
+    return {
+      ok: false,
+      styleUrl,
+      sourceCount: 0,
+      usableSourceCount: 0,
+      hasVectorOrRasterSource: false,
+      warnings: ['Style validation skipped: fetch API is unavailable in current runtime.'],
+    };
+  }
+
+  try {
+    const response = await fetcher(styleUrl);
+    if (!response.ok) {
+      return {
+        ok: false,
+        styleUrl,
+        sourceCount: 0,
+        usableSourceCount: 0,
+        hasVectorOrRasterSource: false,
+        warnings: [`Style URL is unreachable: HTTP ${response.status}.`],
+      };
+    }
+
+    const rawStyle = (await response.json()) as {
+      sources?: Record<string, { type?: string } | undefined>;
+    };
+    const sources = rawStyle.sources ?? {};
+    const sourceEntries = Object.entries(sources);
+    const usableSourceEntries = sourceEntries.filter(([, source]) =>
+      ['vector', 'raster'].includes(String(source?.type ?? '').toLowerCase()),
+    );
+    const hasVectorOrRasterSource = usableSourceEntries.length > 0;
+
+    return {
+      ok: hasVectorOrRasterSource,
+      styleUrl,
+      sourceCount: sourceEntries.length,
+      usableSourceCount: usableSourceEntries.length,
+      hasVectorOrRasterSource,
+      warnings: hasVectorOrRasterSource
+        ? []
+        : ['Style has no usable vector/raster sources for base map rendering.'],
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    return {
+      ok: false,
+      styleUrl,
+      sourceCount: 0,
+      usableSourceCount: 0,
+      hasVectorOrRasterSource: false,
+      warnings: [`Style validation failed: ${message}.`],
+    };
+  }
 };
 
 const runtimeConfigResult = getRuntimeConfigSafe();

@@ -44,8 +44,19 @@ So the build succeeds with secrets present, but the installed APK still fails at
 ## Expected production values
 
 - `EXPO_PUBLIC_ROUTING_BASE_URL=https://api.tagil.pizza`
-- `EXPO_PUBLIC_MAP_STYLE_URL=https://demotiles.maplibre.org/style.json`
-- `EXPO_PUBLIC_MAP_TILE_ENDPOINT=https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf`
+- `EXPO_PUBLIC_MAP_STYLE_URL=https://api.maptiler.com/maps/streets-v2/style.json?key=<MAPTILER_KEY>`
+- `EXPO_PUBLIC_MAP_TILE_ENDPOINT=https://api.maptiler.com/tiles/v3/{z}/{x}/{y}.pbf?key=<MAPTILER_KEY>`
+
+## Coverage requirement for map provider
+
+Before shipping, validate that the selected map provider (MapTiler or self-hosted tileserver):
+
+1. Covers the exact launch region at required zoom levels.
+2. Returns style JSON with usable `vector` or `raster` sources (otherwise base map will be blank).
+3. Has stable SLA/rate limits for production traffic.
+
+If coverage is partial, replace provider URLs with your self-hosted style + tile endpoints and keep both
+`EXPO_PUBLIC_MAP_STYLE_URL` and `EXPO_PUBLIC_MAP_TILE_ENDPOINT` HTTPS.
 
 ## Acceptance criteria
 

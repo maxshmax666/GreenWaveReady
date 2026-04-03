@@ -167,7 +167,8 @@ describe('getRuntimeConfigSafe', () => {
     setRuntimeConfigSource({
       expoExtra: {
         routingBaseUrl: 'https://api.tagil.pizza',
-        mapStyleUrl: 'https://demotiles.maplibre.org/style.json',
+        mapStyleUrl:
+          'https://api.maptiler.com/maps/streets-v2/style.json?key=test-key',
       },
     });
 
@@ -287,7 +288,7 @@ describe('getRuntimeConfigSafe', () => {
     expect(diagnostics.sources.mapTileEndpoint).toBe('fallback');
     expect(safe.config.routingBaseUrl).toBe('http://localhost:3000');
     expect(safe.config.mapStyleUrl).toBe(
-      'https://demotiles.maplibre.org/style.json',
+      'https://api.maptiler.com/maps/streets-v2/style.json?key=YOUR_MAPTILER_KEY',
     );
   });
 
@@ -471,9 +472,10 @@ describe('getRuntimeConfigSafe', () => {
       ...originalEnv,
       NODE_ENV: 'production',
       EXPO_PUBLIC_ROUTING_BASE_URL: 'https://api.tagil.pizza',
-      EXPO_PUBLIC_MAP_STYLE_URL: 'https://demotiles.maplibre.org/style.json',
+      EXPO_PUBLIC_MAP_STYLE_URL:
+        'https://api.maptiler.com/maps/streets-v2/style.json?key=test-key',
       EXPO_PUBLIC_MAP_TILE_ENDPOINT:
-        'https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf',
+        'https://api.maptiler.com/tiles/v3/{z}/{x}/{y}.pbf?key=test-key',
     };
 
     const { clearRuntimeConfigOverride, getRuntimeConfigSafe } =
@@ -488,8 +490,46 @@ describe('getRuntimeConfigSafe', () => {
     }
     expect(result.config.routingBaseUrl).toBe('https://api.tagil.pizza');
     expect(result.config.mapStyleUrl).toBe(
-      'https://demotiles.maplibre.org/style.json',
+      'https://api.maptiler.com/maps/streets-v2/style.json?key=test-key',
     );
+  });
+
+  it('map style guard: fails when style has no vector/raster sources', async () => {
+    const { validateMapStyleSources } = await loadConfigModule();
+    const result = await validateMapStyleSources({
+      styleUrl: 'https://maps.example.com/style.json',
+      fetcher: vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          version: 8,
+          sources: {
+            dem: { type: 'raster-dem' },
+          },
+        }),
+      })) as unknown as typeof fetch,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.hasVectorOrRasterSource).toBe(false);
+  });
+
+  it('map style guard: passes when style has vector/raster sources', async () => {
+    const { validateMapStyleSources } = await loadConfigModule();
+    const result = await validateMapStyleSources({
+      styleUrl: 'https://maps.example.com/style.json',
+      fetcher: vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          version: 8,
+          sources: {
+            streets: { type: 'vector' },
+          },
+        }),
+      })) as unknown as typeof fetch,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.hasVectorOrRasterSource).toBe(true);
   });
 
   it('production URL policy rejects non-https, localhost and private IP', async () => {
