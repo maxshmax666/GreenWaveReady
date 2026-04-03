@@ -2,6 +2,10 @@ import type { Route, VehicleState } from '@greenwave/types';
 import type { QualityMode } from '@greenwave/three-world';
 
 export type CameraMode = 'follow' | 'overview';
+export type PerfMetrics = {
+  fps: number;
+  syncMs: number;
+};
 
 export type RouteSlice = {
   activeRoute?: Route;
@@ -28,6 +32,7 @@ export type UiSlice = {
   cameraFollowEnabled: boolean;
   objectDensity: QualityMode;
   mapWarnings: string[];
+  perfMetrics: PerfMetrics;
   setCameraMode: (mode: CameraMode) => void;
   toggleSimulation: () => void;
   toggleDebugHud: () => void;
@@ -40,6 +45,7 @@ export type UiSlice = {
   toggleCameraFollow: () => void;
   setObjectDensity: (mode: QualityMode) => void;
   setMapWarnings: (warnings: string[]) => void;
+  setPerfMetrics: (metrics: Partial<PerfMetrics>) => void;
 };
 
 export type NavigationState = RouteSlice & VehicleSlice & UiSlice;

@@ -132,6 +132,7 @@ export const MapLibreMapView = ({
     paint?: Record<string, unknown>;
   } | null>(null);
   const setMapWarnings = useNavigationStore((state) => state.setMapWarnings);
+  const setPerfMetrics = useNavigationStore((state) => state.setPerfMetrics);
 
   const routeCoordinates = useMemo(
     () => route?.geometry.map(toLngLat) ?? [],
@@ -217,6 +218,7 @@ export const MapLibreMapView = ({
       }
     }
 
+    const syncStartedAt = globalThis.performance?.now?.() ?? Date.now();
     worldRef.current.setQuality(qualityMode);
     worldRef.current.sync({
       cameraBearing: heading,
@@ -225,6 +227,8 @@ export const MapLibreMapView = ({
       routeCorridor: route?.geometry ?? [],
       ...(resolvedVehicle ? { vehicle: resolvedVehicle } : {}),
     });
+    const syncFinishedAt = globalThis.performance?.now?.() ?? Date.now();
+    setPerfMetrics({ syncMs: Number((syncFinishedAt - syncStartedAt).toFixed(2)) });
 
     lastWorldSyncRef.current = { center, heading, pitch };
     setWorldObjects(worldRef.current.getObjects());
@@ -240,6 +244,7 @@ export const MapLibreMapView = ({
     deviceLocation,
     resolvedVehicle,
     route?.geometry,
+    setPerfMetrics,
   ]);
 
   const routeGeoJson = useMemo<GeoFeatureCollection<GeoLineString>>(() => {

@@ -31,6 +31,14 @@ export const selectControlsState = (state: NavigationState) => ({
   toggleSimulation: state.toggleSimulation,
 });
 
+export const selectNavigationUiActions = (state: NavigationState) => ({
+  setCameraMode: state.setCameraMode,
+  toggleSimulation: state.toggleSimulation,
+  toggleThreeWorld: state.toggleThreeWorld,
+  setObjectDensity: state.setObjectDensity,
+  setPerfMetrics: state.setPerfMetrics,
+});
+
 export const selectDebugHudState = (state: NavigationState) => ({
   debugHud: state.debugHud,
   vehicleState: state.vehicleState,
@@ -38,4 +46,5 @@ export const selectDebugHudState = (state: NavigationState) => ({
   showThreeWorld: state.showThreeWorld,
   objectDensity: state.objectDensity,
   mapWarnings: state.mapWarnings,
+  perfMetrics: state.perfMetrics,
 });
