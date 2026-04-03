@@ -16,6 +16,10 @@ export const createUiSlice: StateCreator<NavigationState, [], [], UiSlice> = (
   cameraFollowEnabled: true,
   objectDensity: 'medium',
   mapWarnings: [],
+  perfMetrics: {
+    fps: 0,
+    syncMs: 0,
+  },
   setCameraMode: (cameraMode) => set({ cameraMode }),
   toggleSimulation: () =>
     set((state) => ({ simulationEnabled: !state.simulationEnabled })),
@@ -35,4 +39,11 @@ export const createUiSlice: StateCreator<NavigationState, [], [], UiSlice> = (
     set((state) => ({ cameraFollowEnabled: !state.cameraFollowEnabled })),
   setObjectDensity: (objectDensity) => set({ objectDensity }),
   setMapWarnings: (mapWarnings) => set({ mapWarnings }),
+  setPerfMetrics: (metrics) =>
+    set((state) => ({
+      perfMetrics: {
+        ...state.perfMetrics,
+        ...metrics,
+      },
+    })),
 });

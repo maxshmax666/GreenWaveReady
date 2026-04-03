@@ -6,8 +6,8 @@ import { GlassPanel, MetricText } from '@greenwave/ui';
 import { MapLibreMapView } from '../map/maplibre-map-view';
 import { useNavigationStore } from '../../state/navigation-store';
 import {
-  selectControlsState,
   selectMapState,
+  selectNavigationUiActions,
   selectRouteState,
   selectSimulationState,
 } from '../../state/selectors';
@@ -27,6 +27,13 @@ const RETRYABLE_HTTP_STATUS = new Set([429, 500, 502, 503, 504]);
 const VEHICLE_RAW_UPDATE_INTERVAL_MS = 100;
 const UI_METRICS_UPDATE_INTERVAL_MS = 1_000;
 const LOW_GPS_ACCURACY_METERS = 25;
+const AUTO_DENSITY_GUARD_ENABLED = true;
+const AUTO_DENSITY_LOW_FPS_THRESHOLD = 24;
+const AUTO_DENSITY_RECOVERY_FPS_THRESHOLD = 50;
+const AUTO_DENSITY_LOW_FPS_HYSTERESIS_MS = 2_000;
+const AUTO_DENSITY_RECOVERY_HYSTERESIS_MS = 6_000;
+const AUTO_DENSITY_WEAK_DEVICE_WARMUP_MS = 5_000;
+const AUTO_DENSITY_WEAK_DEVICE_FPS_THRESHOLD = 52;
 
 type GpsUiState = 'searching' | 'low accuracy' | 'locked';
 
@@ -63,9 +70,8 @@ export const NavigationScreen = (): React.JSX.Element => {
     setDeviceLocation,
   } =
     useNavigationStore(useShallow(selectSimulationState));
-  const { cameraMode, setCameraMode, toggleSimulation } = useNavigationStore(
-    useShallow(selectControlsState),
-  );
+  const { setCameraMode, toggleSimulation, toggleThreeWorld, setObjectDensity, setPerfMetrics } =
+    useNavigationStore(useShallow(selectNavigationUiActions));
   const {
     activeRoute: mapRoute,
     vehicleState: mapVehicle,
@@ -76,9 +82,81 @@ export const NavigationScreen = (): React.JSX.Element => {
     showThreeWorld,
     objectDensity,
   } = useNavigationStore(useShallow(selectMapState));
+  const cameraMode = useNavigationStore((state) => state.cameraMode);
   const tickRef = useRef<number>(0);
   const vehicleStateRef = useRef(vehicleState);
   const pipelineRef = useRef<ReturnType<typeof buildPositionPipeline> | undefined>(undefined);
+  const lowFpsSinceRef = useRef<number | null>(null);
+  const recoverySinceRef = useRef<number | null>(null);
+  const autoReducedRef = useRef(false);
+  const weakDeviceRef = useRef(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    let sampleStartTs = Date.now();
+    let frameCount = 0;
+    let rafId = 0;
+    const warmupStartedAt = sampleStartTs;
+    let warmupFrames = 0;
+
+    const tick = (): void => {
+      if (!isMounted) {
+        return;
+      }
+
+      frameCount += 1;
+      warmupFrames += 1;
+      const now = Date.now();
+      const sampleDuration = now - sampleStartTs;
+      const warmupDuration = now - warmupStartedAt;
+
+      if (!weakDeviceRef.current && warmupDuration >= AUTO_DENSITY_WEAK_DEVICE_WARMUP_MS) {
+        const warmupFps = Math.max(0, Math.round((warmupFrames * 1_000) / warmupDuration));
+        weakDeviceRef.current = warmupFps <= AUTO_DENSITY_WEAK_DEVICE_FPS_THRESHOLD;
+      }
+
+      if (sampleDuration >= 1_000) {
+        const fps = Math.max(0, Math.round((frameCount * 1_000) / sampleDuration));
+        setPerfMetrics({ fps });
+
+        if (AUTO_DENSITY_GUARD_ENABLED) {
+          const onWeakProfile = weakDeviceRef.current || autoReducedRef.current;
+          if (fps <= AUTO_DENSITY_LOW_FPS_THRESHOLD && onWeakProfile) {
+            lowFpsSinceRef.current ??= now;
+            recoverySinceRef.current = null;
+            if (
+              now - lowFpsSinceRef.current >= AUTO_DENSITY_LOW_FPS_HYSTERESIS_MS &&
+              objectDensity !== 'low'
+            ) {
+              setObjectDensity('low');
+              autoReducedRef.current = true;
+            }
+          } else if (fps >= AUTO_DENSITY_RECOVERY_FPS_THRESHOLD && autoReducedRef.current) {
+            recoverySinceRef.current ??= now;
+            lowFpsSinceRef.current = null;
+            if (now - recoverySinceRef.current >= AUTO_DENSITY_RECOVERY_HYSTERESIS_MS) {
+              setObjectDensity('medium');
+              autoReducedRef.current = false;
+            }
+          } else {
+            lowFpsSinceRef.current = null;
+            recoverySinceRef.current = null;
+          }
+        }
+
+        sampleStartTs = now;
+        frameCount = 0;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      isMounted = false;
+      cancelAnimationFrame(rafId);
+    };
+  }, [objectDensity, setObjectDensity, setPerfMetrics]);
 
   useEffect(() => {
     vehicleStateRef.current = vehicleState;
@@ -310,6 +388,21 @@ export const NavigationScreen = (): React.JSX.Element => {
           }
         />
         <ActionButton title="Simulation" onPress={toggleSimulation} />
+        <ActionButton
+          title={showThreeWorld ? '3D On' : '3D Off'}
+          onPress={toggleThreeWorld}
+        />
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {(['low', 'medium', 'high'] as const).map((density) => (
+          <ActionButton
+            key={density}
+            title={density.toUpperCase()}
+            onPress={() => setObjectDensity(density)}
+            active={objectDensity === density}
+          />
+        ))}
       </View>
     </SafeAreaView>
   );
@@ -318,18 +411,20 @@ export const NavigationScreen = (): React.JSX.Element => {
 const ActionButton = ({
   title,
   onPress,
+  active = false,
 }: {
   title: string;
   onPress: () => void;
+  active?: boolean;
 }): React.JSX.Element => (
   <TouchableOpacity
     onPress={onPress}
     style={{
       flex: 1,
-      backgroundColor: '#121A2A',
+      backgroundColor: active ? '#31508A' : '#121A2A',
       paddingVertical: 12,
       borderRadius: 12,
-      borderColor: '#2A3A5F',
+      borderColor: active ? '#5E82C4' : '#2A3A5F',
       borderWidth: 1,
     }}
   >

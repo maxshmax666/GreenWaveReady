@@ -6,7 +6,7 @@ import { useNavigationStore } from '../../state/navigation-store';
 import { selectDebugHudState } from '../../state/selectors';
 
 export const DebugHud = (): React.JSX.Element | null => {
-  const { debugHud, vehicleState, activeRoute, mapWarnings } = useNavigationStore(
+  const { debugHud, vehicleState, activeRoute, mapWarnings, objectDensity, perfMetrics } = useNavigationStore(
     useShallow(selectDebugHudState),
   );
 
@@ -27,6 +27,12 @@ export const DebugHud = (): React.JSX.Element | null => {
       </Text>
       <Text style={{ color: '#AAB4CA', fontSize: 11 }}>
         route pts: {activeRoute?.geometry.length ?? 0}
+      </Text>
+      <Text style={{ color: '#AAB4CA', fontSize: 11 }}>
+        quality: {objectDensity}
+      </Text>
+      <Text style={{ color: '#AAB4CA', fontSize: 11 }}>
+        perf: {perfMetrics.fps} fps · sync {perfMetrics.syncMs.toFixed(1)} ms
       </Text>
       {mapWarnings.map((warning) => (
         <Text key={warning} style={{ color: '#FFCC80', fontSize: 11 }}>
