@@ -11,11 +11,40 @@ const loadConfigModule = async () => import('./index');
 afterEach(() => {
   resetEnv();
   vi.resetModules();
-  vi.unmock('expo-constants');
-  vi.unstubAllGlobals();
 });
 
 describe('getRuntimeConfigSafe', () => {
+  it('expo constants adapter prefers expoConfig.extra, then manifest2.extra, then fallback', async () => {
+    const { readExpoConstantsExtra } = await loadConfigModule();
+
+    expect(
+      readExpoConstantsExtra(
+        {
+          expoConfig: { extra: { routingBaseUrl: 'https://expo-config.example.com' } },
+          manifest2: { extra: { routingBaseUrl: 'https://manifest2.example.com' } },
+        },
+        { routingBaseUrl: 'https://fallback.example.com' },
+      ).routingBaseUrl,
+    ).toBe('https://expo-config.example.com');
+
+    expect(
+      readExpoConstantsExtra(
+        { manifest2: { extra: { routingBaseUrl: 'https://manifest2.example.com' } } },
+        { routingBaseUrl: 'https://fallback.example.com' },
+      ).routingBaseUrl,
+    ).toBe('https://manifest2.example.com');
+
+    expect(
+      readExpoConstantsExtra(undefined, { routingBaseUrl: 'https://fallback.example.com' })
+        .routingBaseUrl,
+    ).toBe('https://fallback.example.com');
+  });
+
+  it('node runtime path: missing expo source adapter does not throw', async () => {
+    const { readExpoExtra } = await loadConfigModule();
+    expect(readExpoExtra()).toEqual({});
+  });
+
   it('Node env path: reads EXPO_PUBLIC_* from process env and marks process_env source', async () => {
     process.env = {
       ...originalEnv,
@@ -48,27 +77,21 @@ describe('getRuntimeConfigSafe', () => {
       EXPO_PUBLIC_MAP_TILE_ENDPOINT: '',
     };
 
-    vi.stubGlobal('require', (id: string) => {
-      if (id === 'expo-constants') {
-        return {
-          default: {
-            expoConfig: {
-              extra: {
-                routingBaseUrl: 'https://expo.example.com',
-                mapStyleUrl: 'https://expo.example.com/style.json',
-                mapTileEndpoint: 'https://expo.example.com/{z}/{x}/{y}.pbf',
-              },
-            },
-          },
-        };
-      }
-      throw new Error(`Unexpected module request: ${id}`);
-    });
-
-    const { clearRuntimeConfigOverride, getRuntimeConfigDiagnostics, getRuntimeConfigSafe } =
-      await loadConfigModule();
+    const {
+      clearRuntimeConfigOverride,
+      getRuntimeConfigDiagnostics,
+      getRuntimeConfigSafe,
+      setRuntimeConfigSource,
+    } = await loadConfigModule();
 
     clearRuntimeConfigOverride();
+    setRuntimeConfigSource({
+      expoExtra: {
+        routingBaseUrl: 'https://expo.example.com',
+        mapStyleUrl: 'https://expo.example.com/style.json',
+        mapTileEndpoint: 'https://expo.example.com/{z}/{x}/{y}.pbf',
+      },
+    });
     const safe = getRuntimeConfigSafe();
     const diagnostics = getRuntimeConfigDiagnostics();
 
@@ -198,30 +221,21 @@ describe('getRuntimeConfigSafe', () => {
       EXPO_PUBLIC_MAP_TILE_ENDPOINT: 'https://process.example.com/{z}/{x}/{y}.pbf',
     };
 
-    vi.stubGlobal('require', (id: string) => {
-      if (id === 'expo-constants') {
-        return {
-          default: {
-            expoConfig: {
-              extra: {
-                routingBaseUrl: 'https://expo.example.com',
-                mapStyleUrl: 'https://expo.example.com/style.json',
-                mapTileEndpoint: 'https://expo.example.com/{z}/{x}/{y}.pbf',
-              },
-            },
-          },
-        };
-      }
-      throw new Error(`Unexpected module request: ${id}`);
-    });
-
     const {
       clearRuntimeConfigOverride,
       getRuntimeConfigDiagnostics,
       getRuntimeConfigSafe,
+      setRuntimeConfigSource,
       setRuntimeConfigOverride,
     } = await loadConfigModule();
 
+    setRuntimeConfigSource({
+      expoExtra: {
+        routingBaseUrl: 'https://expo.example.com',
+        mapStyleUrl: 'https://expo.example.com/style.json',
+        mapTileEndpoint: 'https://expo.example.com/{z}/{x}/{y}.pbf',
+      },
+    });
     setRuntimeConfigOverride({ routingBaseUrl: 'https://override.example.com' });
 
     const withOverride = getRuntimeConfigSafe();

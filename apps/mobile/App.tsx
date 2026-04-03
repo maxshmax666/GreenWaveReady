@@ -3,14 +3,19 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   getRuntimeConfigDiagnostics,
   getRuntimeConfigSafe,
+  readExpoConstantsExtra,
+  setRuntimeConfigSource,
   type RuntimeConfig,
   type RuntimeConfigDiagnostics,
 } from '@greenwave/config';
+import Constants from 'expo-constants';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { NavigationRoot } from './src/app/navigation-root';
 
 const queryClient = new QueryClient();
 let didLogRuntimeConfig = false;
+
+setRuntimeConfigSource({ expoExtra: readExpoConstantsExtra(Constants) });
 
 const getHostForLog = (rawUrl: string): string => {
   try {
