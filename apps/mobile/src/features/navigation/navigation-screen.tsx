@@ -318,6 +318,11 @@ export const NavigationScreen = (): React.JSX.Element => {
     isError && error instanceof Error ? error.message : 'Unknown routing error';
   const errorBadge = isError && error instanceof Error ? getRoutingErrorBadge(error) : null;
   const pipeline = pipelineRef.current;
+  const safeProgress = Number.isFinite(progress) ? progress : 0;
+  const isVehiclePipelineWarmingUp = Boolean(activeRoute) && !vehicleState;
+  const navStatusText = isVehiclePipelineWarmingUp
+    ? 'Vehicle pipeline warming up…'
+    : statusText;
 
   return (
     <SafeAreaView
@@ -329,7 +334,7 @@ export const NavigationScreen = (): React.JSX.Element => {
             ? 'Не удалось построить маршрут'
             : 'Next: Continue straight'}
         </Text>
-        <Text style={{ color: '#8D95A8' }}>{statusText}</Text>
+        <Text style={{ color: '#8D95A8' }}>{navStatusText}</Text>
         <Text style={{ color: '#8D95A8', marginTop: 4 }}>{gpsStatusText}</Text>
       </GlassPanel>
 
@@ -360,7 +365,7 @@ export const NavigationScreen = (): React.JSX.Element => {
           pipeline={pipeline}
           cameraMode={mapCameraMode}
           showGreenWaveOverlay
-          routeProgress={progress}
+          routeProgress={safeProgress}
           showRouteLine={showRouteLine}
           showPassedRoute={showPassedRoute}
           showThreeWorld={showThreeWorld}
@@ -376,7 +381,7 @@ export const NavigationScreen = (): React.JSX.Element => {
           value={`${Math.round((vehicleState?.speedKph ?? 0) * 10) / 10}`}
           label="Speed"
         />
-        <MetricText value={`${Math.round(progress * 100)}%`} label="Progress" />
+        <MetricText value={`${Math.round(safeProgress * 100)}%`} label="Progress" />
         <MetricText value={`${cameraPitch.toFixed(0)}°`} label="Pitch" />
       </GlassPanel>
 

@@ -106,37 +106,40 @@ export const MapLibreMapView = ({
     [route],
   );
 
+  const safeRouteProgress = Number.isFinite(routeProgress) ? routeProgress : 0;
+
   const passedCoordinates = useMemo(() => {
-    if (routeCoordinates.length < 2 || routeProgress <= 0) {
+    if (routeCoordinates.length < 2 || safeRouteProgress <= 0) {
       return [] as [number, number][];
     }
 
-    const cutoffIndex = Math.max(1, Math.floor(routeCoordinates.length * routeProgress));
+    const cutoffIndex = Math.max(1, Math.floor(routeCoordinates.length * safeRouteProgress));
     return routeCoordinates.slice(0, cutoffIndex);
-  }, [routeCoordinates, routeProgress]);
+  }, [routeCoordinates, safeRouteProgress]);
 
-  const resolvedVehicle = vehicle ?? pipeline?.renderedPosition;
+  const routedPosition = vehicle ?? pipeline?.renderedPosition;
+  const currentPosition = routedPosition ?? deviceLocation;
+  const isFallbackPosition = !routedPosition && Boolean(deviceLocation);
   const routeStart = route?.geometry[0];
 
   const cameraModel = useMemo(() => {
-    const cameraVehicle = deviceLocation ?? resolvedVehicle;
-    if (!cameraVehicle) {
+    if (!currentPosition) {
       return null;
     }
 
     return cameraController.nextFrame({
-      vehicle: cameraVehicle,
+      vehicle: currentPosition,
       mode: cameraMode,
-      routeProgress,
+      routeProgress: safeRouteProgress,
     });
-  }, [cameraMode, deviceLocation, resolvedVehicle, routeProgress]);
+  }, [cameraMode, currentPosition, safeRouteProgress]);
 
   const cameraRef = useRef<CameraRef | null>(null);
 
   useCameraController({
-    vehicleState: deviceLocation ?? resolvedVehicle,
+    vehicleState: currentPosition,
     cameraMode,
-    routeProgress,
+    routeProgress: safeRouteProgress,
     routePolyline: route?.geometry ?? [],
     deriveCameraModel: () => ({
       lookAheadMeters: cameraModel?.zoom ?? 50,
@@ -161,13 +164,13 @@ export const MapLibreMapView = ({
   useEffect(() => {
     const center =
       deviceLocation?.coordinate ??
-      resolvedVehicle?.coordinate ??
+      currentPosition?.coordinate ??
       route?.geometry[0] ??
       { lat: 55.751, lng: 37.617 };
     const heading =
       cameraModel?.heading ??
       deviceLocation?.headingDeg ??
-      resolvedVehicle?.headingDeg ??
+      currentPosition?.headingDeg ??
       0;
     const pitch = cameraModel?.pitch ?? 30;
 
@@ -192,7 +195,7 @@ export const MapLibreMapView = ({
       cameraPitch: pitch,
       center,
       routeCorridor: route?.geometry ?? [],
-      ...(resolvedVehicle ? { vehicle: resolvedVehicle } : {}),
+      ...(currentPosition ? { vehicle: currentPosition } : {}),
     });
     const syncFinishedAt = globalThis.performance?.now?.() ?? Date.now();
     setPerfMetrics({ syncMs: Number((syncFinishedAt - syncStartedAt).toFixed(2)) });
@@ -209,7 +212,7 @@ export const MapLibreMapView = ({
     cameraModel?.heading,
     cameraModel?.pitch,
     deviceLocation,
-    resolvedVehicle,
+    currentPosition,
     route?.geometry,
     setPerfMetrics,
   ]);
@@ -292,8 +295,8 @@ export const MapLibreMapView = ({
     };
   }, [routeCoordinates, showGreenWaveOverlay]);
 
-  const vehicleGeoJson = useMemo<GeoFeatureCollection<GeoPoint>>(() => {
-    if (!resolvedVehicle) {
+  const currentPositionGeoJson = useMemo<GeoFeatureCollection<GeoPoint>>(() => {
+    if (!currentPosition) {
       return emptyFeatureCollection<GeoPoint>();
     }
 
@@ -305,42 +308,18 @@ export const MapLibreMapView = ({
           geometry: {
             type: 'Point',
             coordinates: [
-              resolvedVehicle.coordinate.lng,
-              resolvedVehicle.coordinate.lat,
+              currentPosition.coordinate.lng,
+              currentPosition.coordinate.lat,
             ],
           },
           properties: {
-            headingDeg: resolvedVehicle.headingDeg,
+            headingDeg: currentPosition.headingDeg,
+            sourceType: isFallbackPosition ? 'gps-fallback' : 'vehicle',
           },
         },
       ],
     };
-  }, [resolvedVehicle]);
-
-  const deviceLocationGeoJson = useMemo<GeoFeatureCollection<GeoPoint>>(() => {
-    if (!deviceLocation) {
-      return emptyFeatureCollection<GeoPoint>();
-    }
-
-    return {
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [
-              deviceLocation.coordinate.lng,
-              deviceLocation.coordinate.lat,
-            ],
-          },
-          properties: {
-            accuracyMeters: deviceLocation.accuracyMeters,
-          },
-        },
-      ],
-    };
-  }, [deviceLocation]);
+  }, [currentPosition, isFallbackPosition]);
 
   const onDidFailLoadingMap: NonNullable<MapViewProps['onDidFailLoadingMap']> =
     () => {
@@ -459,13 +438,11 @@ export const MapLibreMapView = ({
     };
   }, [mapRenderEpoch, setMapWarnings]);
 
-  const centerCoordinate: [number, number] = deviceLocation
-    ? [deviceLocation.coordinate.lng, deviceLocation.coordinate.lat]
-    : resolvedVehicle
-      ? [resolvedVehicle.coordinate.lng, resolvedVehicle.coordinate.lat]
-      : routeStart
-        ? [routeStart.lng, routeStart.lat]
-        : [37.617, 55.751];
+  const centerCoordinate: [number, number] | undefined = currentPosition
+    ? [currentPosition.coordinate.lng, currentPosition.coordinate.lat]
+    : routeStart
+      ? [routeStart.lng, routeStart.lat]
+      : undefined;
 
   const extrusionHeight =
     (buildingLayerMeta?.paint?.['fill-extrusion-height'] as
@@ -502,7 +479,7 @@ export const MapLibreMapView = ({
       >
         <MapLibreGL.Camera
           ref={cameraRef}
-          centerCoordinate={centerCoordinate}
+          {...(centerCoordinate ? { centerCoordinate } : {})}
           zoomLevel={cameraModel?.zoom ?? 13.6}
           pitch={cameraModel?.pitch ?? 35}
           heading={cameraModel?.heading ?? 0}
@@ -544,28 +521,32 @@ export const MapLibreMapView = ({
           />
         </MapLibreGL.ShapeSource>
 
-        <MapLibreGL.ShapeSource id="vehicle-source" shape={vehicleGeoJson}>
+        <MapLibreGL.ShapeSource id="current-position-source" shape={currentPositionGeoJson}>
           <MapLibreGL.CircleLayer
-            id="vehicle-puck"
+            id="current-position-puck"
             style={{
               circleRadius: 7,
-              circleColor: '#FFFFFF',
-              circleStrokeColor: '#1A73E8',
-              circleStrokeWidth: 3,
-            }}
-          />
-        </MapLibreGL.ShapeSource>
-
-        <MapLibreGL.ShapeSource
-          id="device-location-source"
-          shape={deviceLocationGeoJson}
-        >
-          <MapLibreGL.CircleLayer
-            id="device-location-puck"
-            style={{
-              circleRadius: 6,
-              circleColor: '#2EEA88',
-              circleStrokeColor: '#0D3D2B',
+              circleColor: [
+                'match',
+                ['get', 'sourceType'],
+                'gps-fallback',
+                '#2EEA88',
+                '#FFFFFF',
+              ],
+              circleOpacity: [
+                'match',
+                ['get', 'sourceType'],
+                'gps-fallback',
+                0.55,
+                1,
+              ],
+              circleStrokeColor: [
+                'match',
+                ['get', 'sourceType'],
+                'gps-fallback',
+                '#0D3D2B',
+                '#1A73E8',
+              ],
               circleStrokeWidth: 2,
             }}
           />
