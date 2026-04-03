@@ -7,6 +7,14 @@ export type PerfMetrics = {
   syncMs: number;
 };
 
+export type MapWarningLevel = 'info' | 'warning' | 'error';
+
+export type MapWarning = {
+  level: MapWarningLevel;
+  message: string;
+  actionable: boolean;
+};
+
 export type RouteSlice = {
   activeRoute?: Route;
   setRoute: (route: Route) => void;
@@ -31,7 +39,7 @@ export type UiSlice = {
   showThreeWorld: boolean;
   cameraFollowEnabled: boolean;
   objectDensity: QualityMode;
-  mapWarnings: string[];
+  mapWarnings: MapWarning[];
   perfMetrics: PerfMetrics;
   setCameraMode: (mode: CameraMode) => void;
   toggleSimulation: () => void;
@@ -44,7 +52,7 @@ export type UiSlice = {
   toggleThreeWorld: () => void;
   toggleCameraFollow: () => void;
   setObjectDensity: (mode: QualityMode) => void;
-  setMapWarnings: (warnings: string[]) => void;
+  setMapWarnings: (warnings: MapWarning[]) => void;
   setPerfMetrics: (metrics: Partial<PerfMetrics>) => void;
 };
 

@@ -12,6 +12,7 @@ import {
 import { ThreeWorldManager } from '@greenwave/three-world';
 import { ThreeWorldOverlay } from './three-world-overlay';
 import { useNavigationStore } from '../../state/navigation-store';
+import type { MapWarning } from '../../state/store-types';
 
 const GREEN_WAVE_POINT_INTERVAL = 6;
 const MIN_SYNC_DISTANCE_METERS = 1;
@@ -69,41 +70,6 @@ const distanceMeters = (a: { lat: number; lng: number }, b: { lat: number; lng: 
   const earthRadius = 6_371_000;
   const x = lngDelta * Math.cos(meanLat);
   return Math.sqrt(x * x + latDelta * latDelta) * earthRadius;
-};
-
-const MIN_TERRAIN_SDK_VERSION = '10.4.2';
-
-const parseSemver = (version: string): [number, number, number] | null => {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) {
-    return null;
-  }
-
-  const [major, minor, patch] = match.slice(1, 4);
-  return [Number(major), Number(minor), Number(patch)];
-};
-
-const isSemverGte = (version: string, minimum: string): boolean => {
-  const actual = parseSemver(version);
-  const expected = parseSemver(minimum);
-  if (!actual || !expected) {
-    return false;
-  }
-
-  for (let index = 0; index < 3; index += 1) {
-    const actualPart = actual[index] ?? 0;
-    const expectedPart = expected[index] ?? 0;
-
-    if (actualPart > expectedPart) {
-      return true;
-    }
-
-    if (actualPart < expectedPart) {
-      return false;
-    }
-  }
-
-  return true;
 };
 
 export const MapLibreMapView = ({
@@ -380,6 +346,13 @@ export const MapLibreMapView = ({
     () => {
       setMapError('Failed to load map style or tiles.');
       setStyleLoaded(false);
+      setMapWarnings([
+        {
+          level: 'error',
+          message: 'style/tiles не загрузились',
+          actionable: true,
+        },
+      ]);
     };
 
   useEffect(() => {
@@ -391,18 +364,26 @@ export const MapLibreMapView = ({
       setResolvedMapStyle(runtimeConfig.mapStyleUrl);
       setBuildingLayerMeta(null);
 
-      const warnings: string[] = [];
+      const warnings: MapWarning[] = [];
+      const appendWarning = (
+        level: MapWarning['level'],
+        message: string,
+        actionable: boolean,
+      ): void => {
+        if (warnings.some((warning) => warning.level === level && warning.message === message)) {
+          return;
+        }
+        warnings.push({ level, message, actionable });
+      };
 
       try {
         const mapStyleGuard = await validateMapStyleSources({
           styleUrl: runtimeConfig.mapStyleUrl,
         });
         if (!mapStyleGuard.ok) {
-          const reason =
-            mapStyleGuard.warnings[0] ??
-            'Map style has no vector/raster sources and cannot render a base map.';
+          const reason = mapStyleGuard.warnings[0] ?? 'style/tiles не загрузились';
           setStyleGuardError(reason);
-          warnings.push(reason);
+          appendWarning('error', 'style/tiles не загрузились', true);
           setMapWarnings(warnings);
           return;
         }
@@ -424,8 +405,13 @@ export const MapLibreMapView = ({
             typeof layer.source === 'string' &&
             typeof layer['source-layer'] === 'string',
         );
+        const hasFillExtrusionApi = typeof MapLibreGL.FillExtrusionLayer === 'function';
 
-        if (firstFillExtrusion?.source && firstFillExtrusion['source-layer']) {
+        if (
+          hasFillExtrusionApi &&
+          firstFillExtrusion?.source &&
+          firstFillExtrusion['source-layer']
+        ) {
           setBuildingLayerMeta({
             sourceId: firstFillExtrusion.source,
             sourceLayerId: firstFillExtrusion['source-layer'],
@@ -433,17 +419,17 @@ export const MapLibreMapView = ({
             ...(firstFillExtrusion.paint ? { paint: firstFillExtrusion.paint } : {}),
           });
         } else {
-          warnings.push('3D buildings unavailable: fill-extrusion layer not found in style.');
+          appendWarning('info', '3D недоступен в текущем стиле', false);
         }
 
-        const maplibreVersion = MIN_TERRAIN_SDK_VERSION;
-        const terrainSupported = isSemverGte(maplibreVersion, MIN_TERRAIN_SDK_VERSION);
-        if (!terrainSupported) {
-          warnings.push(
-            `Terrain disabled: SDK ${maplibreVersion} < ${MIN_TERRAIN_SDK_VERSION}.`,
-          );
+        const styleSupportsTerrainSpec =
+          typeof rawStyle.version === 'number' ? rawStyle.version >= 8 : true;
+        const hasTerrainCapability = hasFillExtrusionApi && styleSupportsTerrainSpec;
+
+        if (!hasTerrainCapability) {
+          appendWarning('info', '3D недоступен в текущем стиле', false);
         } else if (!demSourceEntry) {
-          warnings.push('Terrain disabled: raster-dem source not found in style.');
+          appendWarning('warning', 'terrain source отсутствует', true);
         } else {
           const [demSourceId] = demSourceEntry;
           setResolvedMapStyle({
@@ -455,7 +441,7 @@ export const MapLibreMapView = ({
           });
         }
       } catch {
-        warnings.push('3D checks failed: style metadata is unreachable, using 2D fallback.');
+        appendWarning('error', 'style/tiles не загрузились', true);
       }
 
       if (cancelled) {
