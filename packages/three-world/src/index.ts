@@ -36,6 +36,7 @@ const TREE_DENSITY_BY_QUALITY: Record<QualityMode, number> = {
 export class ThreeWorldManager implements WorldLayer {
   private quality: QualityMode = 'medium';
   private objects: WorldObject[] = [];
+  private objectsById = new Map<string, WorldObject>();
 
   setQuality(mode: QualityMode): void {
     this.quality = mode;
@@ -76,7 +77,31 @@ export class ThreeWorldManager implements WorldLayer {
         ]
       : [];
 
-    this.objects = [...trees, ...buildings, ...vehicle];
+    const nextObjects: WorldObject[] = [];
+    const nextIds = new Set<string>();
+    const nextCandidates = [...trees, ...buildings, ...vehicle];
+
+    for (const candidate of nextCandidates) {
+      nextIds.add(candidate.id);
+      const existing = this.objectsById.get(candidate.id);
+      if (existing) {
+        existing.kind = candidate.kind;
+        existing.coordinate = candidate.coordinate;
+        existing.scale = candidate.scale;
+        nextObjects.push(existing);
+      } else {
+        this.objectsById.set(candidate.id, candidate);
+        nextObjects.push(candidate);
+      }
+    }
+
+    for (const existingId of this.objectsById.keys()) {
+      if (!nextIds.has(existingId)) {
+        this.objectsById.delete(existingId);
+      }
+    }
+
+    this.objects = nextObjects;
   }
 
   getObjects(): readonly WorldObject[] {
