@@ -17,6 +17,10 @@ export type WorldSyncState = {
   vehicle?: VehicleState;
 };
 
+export interface WorldRenderer<TRenderPayload = unknown> {
+  render(objects: readonly WorldObject[]): TRenderPayload;
+}
+
 export interface WorldLayer {
   setQuality(mode: QualityMode): void;
   sync(state: WorldSyncState): void;
@@ -49,6 +53,18 @@ export class ThreeWorldManager implements WorldLayer {
       scale: this.quality === 'high' ? 1.1 : 0.9,
     }));
 
+    const buildings = state.routeCorridor
+      .slice(0, Math.max(2, Math.floor(density / 4)))
+      .map((point, index) => ({
+        id: `building-${index}`,
+        kind: 'building' as const,
+        coordinate: {
+          lat: point.lat + 0.00016,
+          lng: point.lng + (index % 2 === 0 ? 0.00014 : -0.00014),
+        },
+        scale: this.quality === 'high' ? 1.2 : 1,
+      }));
+
     const vehicle = state.vehicle
       ? [
           {
@@ -60,7 +76,7 @@ export class ThreeWorldManager implements WorldLayer {
         ]
       : [];
 
-    this.objects = [...trees, ...vehicle];
+    this.objects = [...trees, ...buildings, ...vehicle];
   }
 
   getObjects(): readonly WorldObject[] {

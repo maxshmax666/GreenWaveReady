@@ -10,6 +10,7 @@ import {
   toLngLat,
 } from '@greenwave/map-core';
 import { ThreeWorldManager } from '@greenwave/three-world';
+import { ThreeWorldOverlay } from './three-world-overlay';
 
 const GREEN_WAVE_POINT_INTERVAL = 6;
 type MapViewProps = React.ComponentProps<typeof MapLibreGL.MapView>;
@@ -113,6 +114,8 @@ export const MapLibreMapView = ({
     routeCorridor: route?.geometry ?? [],
     ...(resolvedVehicle ? { vehicle: resolvedVehicle } : {}),
   });
+
+  const worldObjects = worldRef.current.getObjects();
 
   const routeGeoJson = useMemo<GeoFeatureCollection<GeoLineString>>(() => {
     if (routeCoordinates.length < 2 || !showRouteLine) {
@@ -364,16 +367,15 @@ export const MapLibreMapView = ({
             />
           </MapLibreGL.ShapeSource>
         ) : null}
+
+        <ThreeWorldOverlay objects={worldObjects} visible={showThreeWorld} />
       </MapLibreGL.MapView>
 
-      {showThreeWorld ? (
+      {__DEV__ && showThreeWorld ? (
         <View style={{ position: 'absolute', top: 12, left: 12 }}>
           <GlassPanel>
-            <Text style={{ color: '#EAF1FF', fontSize: 12, fontWeight: '600' }}>
-              3D World active · {qualityMode}
-            </Text>
             <Text style={{ color: '#9EB0CC', fontSize: 11 }}>
-              Objects: {worldRef.current.getObjects().length}
+              three-world debug · {qualityMode} · objects: {worldObjects.length}
             </Text>
           </GlassPanel>
         </View>
