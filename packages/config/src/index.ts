@@ -4,6 +4,10 @@ const DEFAULT_MAP_TILE_ENDPOINT =
 
 type EnvMap = Record<string, string | undefined>;
 type ExpoExtraMap = Partial<Record<ConfigKey, string | boolean>>;
+type ExpoConstantsLike = {
+  expoConfig?: { extra?: Record<string, unknown> } | null;
+  manifest2?: { extra?: Record<string, unknown> } | null;
+};
 
 export type ConfigKey = 'routingBaseUrl' | 'mapStyleUrl' | 'mapTileEndpoint' | 'mockMode';
 export type ConfigSource = 'override' | 'process_env' | 'expo_extra' | 'fallback';
@@ -57,6 +61,8 @@ const getEnvValue = (env: EnvMap, ...keys: string[]): string | undefined => {
 };
 
 const configOverrideStore: RuntimeConfigOverride = {};
+const runtimeConfigSourceStore: { expoExtra: ExpoExtraMap } = { expoExtra: {} };
+let didLogExpoExtraSource = false;
 
 const setConfigOverride = <T extends ConfigKey>(key: T, value: RuntimeConfig[T]): void => {
   setRuntimeConfigOverride({ [key]: value } as RuntimeConfigOverride);
@@ -81,33 +87,10 @@ const normalizeExtraValue = (value: unknown): string | boolean | undefined => {
   return undefined;
 };
 
-const readExpoExtra = (): ExpoExtraMap => {
-  const maybeRequire = (globalThis as { require?: (id: string) => unknown }).require;
-  if (typeof maybeRequire !== 'function') {
-    return {};
-  }
-
-  let moduleExports: unknown;
-  try {
-    moduleExports = maybeRequire('expo-constants');
-  } catch {
-    return {};
-  }
-
-  const constants = (moduleExports as { default?: unknown }).default as
-    | { expoConfig?: { extra?: Record<string, unknown> }; manifest2?: { extra?: Record<string, unknown> } }
-    | undefined;
-
-  if (!constants) {
-    return {};
-  }
-
+const toExpoExtraMap = (source: Record<string, unknown> | undefined): ExpoExtraMap => {
   const candidates: Record<string, unknown>[] = [];
-  if (constants.expoConfig?.extra && typeof constants.expoConfig.extra === 'object') {
-    candidates.push(constants.expoConfig.extra);
-  }
-  if (constants.manifest2?.extra && typeof constants.manifest2.extra === 'object') {
-    candidates.push(constants.manifest2.extra);
+  if (source && typeof source === 'object') {
+    candidates.push(source);
   }
 
   const normalized: ExpoExtraMap = {};
@@ -130,6 +113,23 @@ const readExpoExtra = (): ExpoExtraMap => {
 
   return normalized;
 };
+
+export const readExpoConstantsExtra = (
+  constants: ExpoConstantsLike | null | undefined,
+  fallback: Record<string, unknown> | null | undefined = undefined,
+): ExpoExtraMap => {
+  if (constants?.expoConfig?.extra && typeof constants.expoConfig.extra === 'object') {
+    return toExpoExtraMap(constants.expoConfig.extra);
+  }
+
+  if (constants?.manifest2?.extra && typeof constants.manifest2.extra === 'object') {
+    return toExpoExtraMap(constants.manifest2.extra);
+  }
+
+  return toExpoExtraMap(fallback ?? undefined);
+};
+
+const readExpoExtra = (): ExpoExtraMap => readExpoConstantsExtra(undefined, runtimeConfigSourceStore.expoExtra);
 
 const resolveFallbackValue = (key: ConfigKey, nodeEnv: string): string | boolean | undefined => {
   if (key === 'routingBaseUrl') {
@@ -408,6 +408,12 @@ export const clearRuntimeConfigOverride = (): void => {
 
 export const getRuntimeConfigOverride = (): RuntimeConfigOverride => ({ ...configOverrideStore });
 
+export const setRuntimeConfigSource = (params: {
+  expoExtra?: Record<string, unknown> | null;
+}): void => {
+  runtimeConfigSourceStore.expoExtra = readExpoConstantsExtra(undefined, params.expoExtra);
+};
+
 type RuntimeConfigEvaluation = {
   config: RuntimeConfig | null;
   diagnostics: RuntimeConfigDiagnostics;
@@ -489,6 +495,11 @@ const evaluateRuntimeConfig = (): RuntimeConfigEvaluation => {
     errors,
     ...(Object.keys(resolvedHosts).length > 0 ? { resolvedHosts } : {}),
   };
+
+  if (!didLogExpoExtraSource && Object.values(sources).some((source) => source === 'expo_extra')) {
+    didLogExpoExtraSource = true;
+    console.info('[config] source=expo_extra');
+  }
 
   if (errors.length > 0) {
     return { config: null, diagnostics };
