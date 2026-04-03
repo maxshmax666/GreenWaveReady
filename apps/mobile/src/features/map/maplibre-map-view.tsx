@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import MapLibreGL, { type CameraRef } from '@maplibre/maplibre-react-native';
 import { runtimeConfig } from '@greenwave/config';
@@ -13,6 +13,8 @@ import { ThreeWorldManager } from '@greenwave/three-world';
 import { ThreeWorldOverlay } from './three-world-overlay';
 
 const GREEN_WAVE_POINT_INTERVAL = 6;
+const MIN_SYNC_DISTANCE_METERS = 1;
+const MIN_SYNC_ANGLE_DELTA_DEGREES = 1;
 type MapViewProps = React.ComponentProps<typeof MapLibreGL.MapView>;
 
 type GeoPoint = { type: 'Point'; coordinates: [number, number] };
@@ -35,6 +37,17 @@ const emptyFeatureCollection = <
 });
 
 const cameraController = new DrivingCameraController();
+
+const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
+
+const distanceMeters = (a: { lat: number; lng: number }, b: { lat: number; lng: number }): number => {
+  const latDelta = toRadians(b.lat - a.lat);
+  const lngDelta = toRadians(b.lng - a.lng);
+  const meanLat = toRadians((a.lat + b.lat) / 2);
+  const earthRadius = 6_371_000;
+  const x = lngDelta * Math.cos(meanLat);
+  return Math.sqrt(x * x + latDelta * latDelta) * earthRadius;
+};
 
 export const MapLibreMapView = ({
   route,
@@ -98,24 +111,68 @@ export const MapLibreMapView = ({
   });
 
   const worldRef = useRef(new ThreeWorldManager());
-  worldRef.current.setQuality(qualityMode);
-  worldRef.current.sync({
-    cameraBearing:
+  const [worldObjects, setWorldObjects] = useState(() =>
+    worldRef.current.getObjects(),
+  );
+  const lastWorldSyncRef = useRef<{
+    center: { lat: number; lng: number };
+    heading: number;
+    pitch: number;
+  } | null>(null);
+  const syncCallsRef = useRef(0);
+  const [syncCalls, setSyncCalls] = useState(0);
+
+  useEffect(() => {
+    const center =
+      deviceLocation?.coordinate ??
+      resolvedVehicle?.coordinate ??
+      route?.geometry[0] ??
+      { lat: 55.751, lng: 37.617 };
+    const heading =
       cameraModel?.heading ??
       deviceLocation?.headingDeg ??
       resolvedVehicle?.headingDeg ??
-      0,
-    cameraPitch: cameraModel?.pitch ?? 30,
-    center:
-      deviceLocation?.coordinate ??
-      resolvedVehicle?.coordinate ??
-      routeStart ??
-      { lat: 55.751, lng: 37.617 },
-    routeCorridor: route?.geometry ?? [],
-    ...(resolvedVehicle ? { vehicle: resolvedVehicle } : {}),
-  });
+      0;
+    const pitch = cameraModel?.pitch ?? 30;
 
-  const worldObjects = worldRef.current.getObjects();
+    const previous = lastWorldSyncRef.current;
+    if (previous) {
+      const centerDeltaMeters = distanceMeters(previous.center, center);
+      const headingDelta = Math.abs(previous.heading - heading);
+      const pitchDelta = Math.abs(previous.pitch - pitch);
+      if (
+        centerDeltaMeters < MIN_SYNC_DISTANCE_METERS &&
+        headingDelta < MIN_SYNC_ANGLE_DELTA_DEGREES &&
+        pitchDelta < MIN_SYNC_ANGLE_DELTA_DEGREES
+      ) {
+        return;
+      }
+    }
+
+    worldRef.current.setQuality(qualityMode);
+    worldRef.current.sync({
+      cameraBearing: heading,
+      cameraPitch: pitch,
+      center,
+      routeCorridor: route?.geometry ?? [],
+      ...(resolvedVehicle ? { vehicle: resolvedVehicle } : {}),
+    });
+
+    lastWorldSyncRef.current = { center, heading, pitch };
+    setWorldObjects(worldRef.current.getObjects());
+
+    if (__DEV__) {
+      syncCallsRef.current += 1;
+      setSyncCalls(syncCallsRef.current);
+    }
+  }, [
+    qualityMode,
+    cameraModel?.heading,
+    cameraModel?.pitch,
+    deviceLocation,
+    resolvedVehicle,
+    route?.geometry,
+  ]);
 
   const routeGeoJson = useMemo<GeoFeatureCollection<GeoLineString>>(() => {
     if (routeCoordinates.length < 2 || !showRouteLine) {
@@ -375,7 +432,8 @@ export const MapLibreMapView = ({
         <View style={{ position: 'absolute', top: 12, left: 12 }}>
           <GlassPanel>
             <Text style={{ color: '#9EB0CC', fontSize: 11 }}>
-              three-world debug · {qualityMode} · objects: {worldObjects.length}
+              three-world debug · {qualityMode} · objects: {worldObjects.length} ·
+              sync: {syncCalls}
             </Text>
           </GlassPanel>
         </View>
