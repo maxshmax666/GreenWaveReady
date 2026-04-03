@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import MapLibreGL, { type CameraRef } from '@maplibre/maplibre-react-native';
-import { runtimeConfig } from '@greenwave/config';
+import { runtimeConfig, validateMapStyleSources } from '@greenwave/config';
 import { GlassPanel } from '@greenwave/ui';
 import type { MapAdapterProps } from './map-adapter';
 import { useCameraController } from '../navigation/use-camera-controller';
@@ -125,6 +125,7 @@ export const MapLibreMapView = ({
     runtimeConfig.mapStyleUrl,
   );
   const [styleLoaded, setStyleLoaded] = useState(false);
+  const [styleGuardError, setStyleGuardError] = useState<string | null>(null);
   const [buildingLayerMeta, setBuildingLayerMeta] = useState<{
     sourceId: string;
     sourceLayerId: string;
@@ -386,12 +387,26 @@ export const MapLibreMapView = ({
 
     const loadStyleCapabilities = async (): Promise<void> => {
       setStyleLoaded(false);
+      setStyleGuardError(null);
       setResolvedMapStyle(runtimeConfig.mapStyleUrl);
       setBuildingLayerMeta(null);
 
       const warnings: string[] = [];
 
       try {
+        const mapStyleGuard = await validateMapStyleSources({
+          styleUrl: runtimeConfig.mapStyleUrl,
+        });
+        if (!mapStyleGuard.ok) {
+          const reason =
+            mapStyleGuard.warnings[0] ??
+            'Map style has no vector/raster sources and cannot render a base map.';
+          setStyleGuardError(reason);
+          warnings.push(reason);
+          setMapWarnings(warnings);
+          return;
+        }
+
         const response = await fetch(runtimeConfig.mapStyleUrl);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
@@ -456,7 +471,7 @@ export const MapLibreMapView = ({
       cancelled = true;
       setMapWarnings([]);
     };
-  }, [setMapWarnings]);
+  }, [mapRenderEpoch, setMapWarnings]);
 
   const centerCoordinate: [number, number] = deviceLocation
     ? [deviceLocation.coordinate.lng, deviceLocation.coordinate.lat]
@@ -607,6 +622,64 @@ export const MapLibreMapView = ({
 
         <ThreeWorldOverlay objects={worldObjects} visible={showThreeWorld} />
       </MapLibreGL.MapView>
+
+      {styleGuardError ? (
+        <View
+          style={{
+            position: 'absolute',
+            inset: 12,
+            justifyContent: 'center',
+          }}
+        >
+          <GlassPanel>
+            <Text style={{ color: '#F6F9FF', fontWeight: '700', marginBottom: 6 }}>
+              Базовая карта недоступна
+            </Text>
+            <Text style={{ color: '#A9B5CC', marginBottom: 10 }}>{styleGuardError}</Text>
+            <Text style={{ color: '#A9B5CC', marginBottom: 10 }}>
+              Проверьте EXPO_PUBLIC_MAP_STYLE_URL/EXPO_PUBLIC_MAP_TILE_ENDPOINT и coverage
+              провайдера для вашего региона.
+            </Text>
+            <Pressable
+              onPress={() => {
+                setStyleGuardError(
+                  'Смените провайдера/конфиг и перезапустите экран навигации.',
+                );
+              }}
+              style={{
+                alignSelf: 'flex-start',
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: '#2A3A5F',
+                backgroundColor: '#111B2D',
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                marginBottom: 8,
+              }}
+            >
+              <Text style={{ color: '#ECF2FF', fontWeight: '600' }}>
+                Сменить провайдера/конфиг
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setMapRenderEpoch((prev) => prev + 1);
+              }}
+              style={{
+                alignSelf: 'flex-start',
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: '#2A3A5F',
+                backgroundColor: '#111B2D',
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+              }}
+            >
+              <Text style={{ color: '#ECF2FF', fontWeight: '600' }}>Повторить проверку</Text>
+            </Pressable>
+          </GlassPanel>
+        </View>
+      ) : null}
 
       {__DEV__ && showThreeWorld ? (
         <View style={{ position: 'absolute', top: 12, left: 12 }}>
