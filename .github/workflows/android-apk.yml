@@ -24,7 +24,6 @@ jobs:
       CI: "1"
       EXPO_PUBLIC_ROUTING_BASE_URL: ${{ secrets.EXPO_PUBLIC_ROUTING_BASE_URL || vars.EXPO_PUBLIC_ROUTING_BASE_URL }}
       EXPO_PUBLIC_MAP_TILE_ENDPOINT: ${{ secrets.EXPO_PUBLIC_MAP_TILE_ENDPOINT || vars.EXPO_PUBLIC_MAP_TILE_ENDPOINT }}
-      EXPO_PUBLIC_MAP_STYLE_URL: ${{ secrets.EXPO_PUBLIC_MAP_STYLE_URL || vars.EXPO_PUBLIC_MAP_STYLE_URL }}
 
     steps:
       - name: Checkout
@@ -49,42 +48,32 @@ jobs:
           java -version
 
       - name: Resolve production public URLs
-        env:
-          MAP_STYLE_URL_SECRET: ${{ secrets.EXPO_PUBLIC_MAP_STYLE_URL }}
-          MAP_STYLE_URL_VAR: ${{ vars.EXPO_PUBLIC_MAP_STYLE_URL }}
+        shell: bash
         run: |
-          is_invalid_map_style_url() {
-            local value="$1"
-            local lower
-            local trimmed
+          set -euo pipefail
 
-            trimmed="$(printf '%s' "$value" | sed -E "s/^[[:space:]'\"]+//; s/[[:space:]'\"]+$//")"
-            lower="$(printf '%s' "$trimmed" | tr '[:upper:]' '[:lower:]')"
+          DEFAULT_MAP_STYLE_URL="https://demotiles.maplibre.org/style.json"
 
-            [[ -z "$trimmed" ]] && return 0
-            [[ "$trimmed" =~ ^\*+$ ]] && return 0
-            [[ "$lower" == *'placeholder'* ]] && return 0
-            [[ "$lower" == *'changeme'* ]] && return 0
-            [[ "$trimmed" == *'$''{{'* ]] && return 0
-
-            return 1
-          }
-
-          resolved_map_style_url=''
-          source='default'
-
-          if ! is_invalid_map_style_url "${MAP_STYLE_URL_SECRET:-}"; then
-            resolved_map_style_url="$MAP_STYLE_URL_SECRET"
-            source='secret'
-          elif ! is_invalid_map_style_url "${MAP_STYLE_URL_VAR:-}"; then
-            resolved_map_style_url="$MAP_STYLE_URL_VAR"
-            source='variable'
-          else
-            resolved_map_style_url='https://demotiles.maplibre.org/style.json'
+          RAW_MAP_STYLE_URL="${{ secrets.EXPO_PUBLIC_MAP_STYLE_URL }}"
+          if [ -z "$RAW_MAP_STYLE_URL" ]; then
+            RAW_MAP_STYLE_URL="${{ vars.EXPO_PUBLIC_MAP_STYLE_URL }}"
           fi
 
-          printf '%s\n' "EXPO_PUBLIC_MAP_STYLE_URL=$resolved_map_style_url" >> "$GITHUB_ENV"
-          printf '%s\n' "[release-env] EXPO_PUBLIC_MAP_STYLE_URL resolved from ${source}."
+          if [[ "$RAW_MAP_STYLE_URL" =~ ^https?://.+$ ]]; then
+            FINAL_MAP_STYLE_URL="$RAW_MAP_STYLE_URL"
+            echo "Using provided EXPO_PUBLIC_MAP_STYLE_URL"
+          else
+            FINAL_MAP_STYLE_URL="$DEFAULT_MAP_STYLE_URL"
+            echo "Provided EXPO_PUBLIC_MAP_STYLE_URL is empty or invalid. Falling back to default."
+          fi
+
+          echo "EXPO_PUBLIC_MAP_STYLE_URL=$FINAL_MAP_STYLE_URL" >> "$GITHUB_ENV"
+          echo "Resolved EXPO_PUBLIC_MAP_STYLE_URL for subsequent steps."
+
+      - name: Debug resolved env
+        shell: bash
+        run: |
+          node -e "const v=process.env.EXPO_PUBLIC_MAP_STYLE_URL||''; console.log('EXPO_PUBLIC_MAP_STYLE_URL present:', !!v); console.log('Looks like URL:', /^https?:\\/\\/.+/.test(v)); console.log('Length:', v.length);"
 
       - name: Fail fast on missing production env vars
         run: |
