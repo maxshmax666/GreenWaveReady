@@ -37,4 +37,5 @@ export const selectDebugHudState = (state: NavigationState) => ({
   activeRoute: state.activeRoute,
   showThreeWorld: state.showThreeWorld,
   objectDensity: state.objectDensity,
+  mapWarnings: state.mapWarnings,
 });
