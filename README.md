@@ -6,7 +6,7 @@ Premium navigation monorepo foundation: **MapLibre = geospatial source of truth*
 
 - Node.js **20.11.1+**
 - npm **10.8.2+**
-- Expo SDK **53** (project dependency: `expo ~53.0.9`)
+- Expo SDK **53** (project dependency: `expo ~53.0.27`)
 - iOS **16+** / Android **10+**
 - **Expo Go = limited mode only** (works when using a fallback map adapter without native MapLibre bindings).
 - **Custom Dev Client = required for full map functionality** (`@maplibre/maplibre-react-native` native module).
