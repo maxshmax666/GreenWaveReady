@@ -494,6 +494,29 @@ describe('getRuntimeConfigSafe', () => {
     );
   });
 
+  it('production allows missing map tile endpoint', async () => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: 'production',
+      EXPO_PUBLIC_ROUTING_BASE_URL: 'https://api.tagil.pizza',
+      EXPO_PUBLIC_MAP_STYLE_URL:
+        'https://api.maptiler.com/maps/streets-v2/style.json?key=test-key',
+      EXPO_PUBLIC_MAP_TILE_ENDPOINT: '',
+    };
+
+    const { clearRuntimeConfigOverride, getRuntimeConfigSafe } =
+      await loadConfigModule();
+
+    clearRuntimeConfigOverride();
+    const result = getRuntimeConfigSafe();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error('Expected success result');
+    }
+    expect(result.config.mapTileEndpoint).toBeUndefined();
+  });
+
   it('map style guard: fails when style has no vector/raster sources', async () => {
     const { validateMapStyleSources } = await loadConfigModule();
     const result = await validateMapStyleSources({
