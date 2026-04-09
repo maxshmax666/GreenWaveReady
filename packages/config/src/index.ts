@@ -154,7 +154,7 @@ const resolveFallbackValue = (key: ConfigKey, nodeEnv: string): string | boolean
     return nodeEnv === 'development' ? DEFAULT_MAP_STYLE_URL : undefined;
   }
   if (key === 'mapTileEndpoint') {
-    return DEFAULT_MAP_TILE_ENDPOINT;
+    return nodeEnv === 'development' ? DEFAULT_MAP_TILE_ENDPOINT : undefined;
   }
   if (key === 'mockMode') {
     return false;
@@ -284,7 +284,8 @@ const validateRuntimeUrl = (params: {
   const rawValue = typeof params.value === 'string' ? params.value.trim() : '';
 
   if (!rawValue) {
-    if (params.requiredInProduction && params.nodeEnv === 'production') {
+    const isRequired = params.requiredInProduction === true && params.nodeEnv === 'production';
+    if (isRequired) {
       return {
         error: buildValidationError({
           key: params.key,
@@ -296,15 +297,7 @@ const validateRuntimeUrl = (params: {
       };
     }
 
-    return {
-      error: buildValidationError({
-        key: params.key,
-        source: params.source,
-        rule: 'missing_env',
-        envNames: params.envNames,
-        nodeEnv: params.nodeEnv,
-      }),
-    };
+    return {};
   }
 
   let parsed: URL;
@@ -370,7 +363,7 @@ const validateRuntimeUrl = (params: {
 export type RuntimeConfig = {
   routingBaseUrl: string;
   mapStyleUrl: string;
-  mapTileEndpoint: string;
+  mapTileEndpoint?: string;
   mockMode: boolean;
 };
 export type RuntimeConfigOverride = Partial<
@@ -524,7 +517,7 @@ const evaluateRuntimeConfig = (): RuntimeConfigEvaluation => {
     config: {
       routingBaseUrl: routingValidation.value as string,
       mapStyleUrl: mapStyleValidation.value as string,
-      mapTileEndpoint: mapTilesValidation.value as string,
+      ...(mapTilesValidation.value ? { mapTileEndpoint: mapTilesValidation.value } : {}),
       mockMode: resolved.mockMode ? parseBoolean(resolved.mockMode.value) : false,
     },
     diagnostics,
